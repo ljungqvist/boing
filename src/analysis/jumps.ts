@@ -9,7 +9,7 @@ export interface JumpOptions {
 
 export type JumpFlag =
   | "few-frames"      // too few airborne frames for a reliable fit
-  | "g-implausible"   // hip curvature doesn't match gravity: slow motion, arm swing, wrong scale
+  | "g-implausible"   // hip curvature far from gravity: wrong time base (slow motion) or not a jump
   | "not-parabola"    // hip isn't decelerating during "flight"
   | "poor-fit"        // large residuals: tucked legs, bad keypoints
   | "disagree"        // takeoff→apex and flight-time heights differ: bent-knee landing?
@@ -97,7 +97,9 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     };
     if (j.airborneFrames < 8) j.flags.push("few-frames");
     if (hipFit.a >= 0) j.flags.push("not-parabola");
-    else if (gImplied < 6.5 || gImplied > 13) j.flags.push("g-implausible");
+    // Wide bounds: the body-size scale is distorted by camera tilt (a floor-level camera
+    // read 6–8.5), but a 2× slow-motion clip still reads ≈ 2.5.
+    else if (gImplied < 4 || gImplied > 20) j.flags.push("g-implausible");
     if (Math.max(j.hipRmsRel, j.toeRmsRel) > 0.015) j.flags.push("poor-fit");
     if (Math.abs(hPrimary - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
     if (j.floorShiftRel > 0.02) j.flags.push("camera-moved");

@@ -13,6 +13,8 @@ export interface PoseVideo {
   width: number;
   height: number;
   fps: number;
+  /** Real seconds per file second, for slow-motion files (from the capture fps). */
+  timeScale?: number;
   frames: PoseFrame[];
 }
 

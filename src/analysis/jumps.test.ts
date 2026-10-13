@@ -34,6 +34,17 @@ describe("findJumps on synthetic CMJs", () => {
     expect(j.flags).toContain("g-implausible");
   });
 
+  it("tolerates the scale distortion of a tilted camera", () => {
+    // A camera tilted up made real jumps read g ≈ 6–8.5: body size looks too big
+    // relative to the vertical motion.
+    const s = syntheticSignals({ fps: 60 });
+    s.bodyPx = s.bodyPx.map((b) => b / 0.65);
+    const [j] = findJumps(s);
+    expect(j.gImplied).toBeLessThan(7);
+    expect(j.flags).not.toContain("g-implausible");
+    expect(Math.abs(j.hPrimary - 0.3)).toBeLessThan(0.01);
+  });
+
   it("flags a lifted foot without a jumping hip", () => {
     const s = syntheticSignals({ jumps: [] });
     // Toe mean rises 6 cm for 0.4 s (one foot lifted), hip stays put.
