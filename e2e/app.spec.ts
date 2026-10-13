@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
 test("live camera: measures the jump in the fake camera feed", async ({ page }) => {
   test.skip(!existsSync(resolve(DATA, "e2e", "front-jump.y4m")), "fake camera file missing (tools/make_y4m.py)");
   await page.goto("/");
-  await page.click("#front");
+  await page.click("#start");
   // The y4m loops; the first jump is around 5.4 s into the clip.
   await expect.poll(async () => (await app(page)).results.filter((r) => r.accepted).length, { timeout: 120_000 })
     .toBeGreaterThan(0);
@@ -24,7 +24,7 @@ test("live camera: measures the jump in the fake camera feed", async ({ page }) 
   // Offline evaluation (heavy model, 1080p): 37.3 cm takeoff→apex, 39.9 cm flight time.
   expect(jump.hPrimary * 100).toBeGreaterThan(32);
   expect(jump.hPrimary * 100).toBeLessThan(43);
-  await expect(page.locator(".result .height").first()).toContainText("cm");
+  await expect(page.locator(".chip")).toHaveCount(s.results.filter((r) => r.accepted).length);
 });
 
 test("file: slow-motion recording is converted to real time", async ({ page }) => {
@@ -44,4 +44,5 @@ test("file: slow-motion recording is converted to real time", async ({ page }) =
     expect(Math.abs(r.hPrimary * 100 - ref)).toBeLessThan(2);
   }
   await expect(page.locator("#status")).toContainText("captured at 120 fps");
+  await expect(page.locator(".chip")).toHaveCount(2);
 });

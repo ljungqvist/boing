@@ -3,36 +3,69 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Boing: jump height</title>
-    <link rel="icon" href="data:," />
+    <meta name="theme-color" content="#0e0e10" />
+    <title>Boing · jump height</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 27 Q16 -7 28 27' fill='none' stroke='%23ff7a1a' stroke-width='3.5' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='10' r='4' fill='%23ff7a1a'/%3E%3C/svg%3E" />
   </head>
   <body>
-    <header>
-      <h1>Boing</h1>
-      <div class="controls">
-        <button id="front">Front camera</button>
-        <button id="back">Back camera</button>
-        <label class="button">Open video…<input id="file" type="file" accept="video/*" hidden /></label>
-        <button id="stop">Stop</button>
-        <button id="save" title="Download the recorded pose data, for troubleshooting">Save session</button>
-        <label class="stature">Body height <input id="stature" type="number" value="175" min="100" max="230" /> cm</label>
-      </div>
-    </header>
-    <main>
+    <div id="app">
       <div id="viewer">
         <div id="stage">
           <video id="video" playsinline muted></video>
           <canvas id="overlay"></canvas>
         </div>
+
+        <div id="placeholder">
+          <div class="logo-big" data-icon="logo"></div>
+          <p>Place the phone so your whole body, <b>including your feet</b>, is in view.<br />Then press <b>Start</b> and jump with hands on hips.</p>
+        </div>
+
+        <div id="top">
+          <div class="brand"><span data-icon="logo"></span>Boing</div>
+          <div id="status" class="pill idle">Press Start</div>
+          <div class="top-actions">
+            <button id="sound" class="icon" aria-label="Spoken result on/off"></button>
+            <button id="menu" class="icon" aria-label="Menu" data-icon="menu"></button>
+          </div>
+        </div>
+
         <div id="flash" hidden></div>
+
+        <div id="bottom">
+          <div id="session" hidden>
+            <div id="summary"></div>
+            <div id="chips"></div>
+          </div>
+          <div id="controls">
+            <label id="open" class="icon round" aria-label="Analyse a video">
+              <span data-icon="film"></span>
+              <input id="file" type="file" accept="video/*" hidden />
+            </label>
+            <button id="start" class="shutter" aria-label="Start"><span>Start</span></button>
+            <button id="flip" class="icon round" aria-label="Switch camera" data-icon="flip"></button>
+          </div>
+        </div>
       </div>
-      <aside>
-        <div id="status">Place the phone so your whole body, including the feet, is visible. Then start a camera.</div>
-        <canvas id="plot" hidden></canvas>
-        <ol id="results"></ol>
-        <details id="ignored" hidden><summary></summary><ul></ul></details>
-      </aside>
-    </main>
+
+      <section id="details" class="sheet" hidden>
+        <header><h2>Jump</h2><button class="icon close" data-icon="close" aria-label="Close"></button></header>
+        <div class="sheet-body"></div>
+      </section>
+
+      <section id="menu-sheet" class="sheet" hidden>
+        <header><h2>Settings</h2><button class="icon close" data-icon="close" aria-label="Close"></button></header>
+        <div class="sheet-body">
+          <label class="field">Body height
+            <span><input id="stature" type="number" inputmode="numeric" value="175" min="100" max="230" /> cm</span>
+          </label>
+          <p class="hint">Only used to check that a movement really was a jump.</p>
+          <button id="save" class="wide">Save session (pose data)</button>
+          <p class="hint">For troubleshooting: downloads what the app saw during the last few minutes.</p>
+          <details id="ignored" hidden><summary></summary><ul></ul></details>
+          <p class="hint"><a href="https://github.com/ljungqvist/boing" target="_blank" rel="noopener">About Boing</a></p>
+        </div>
+      </section>
+    </div>
     <script type="module" src="/src/web/main.ts"></script>
   </body>
 </html>

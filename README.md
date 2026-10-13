@@ -13,15 +13,19 @@ Two numbers are shown per jump:
 
 - **Height** (large): rise from takeoff to the highest point, comparable to a force plate.
 - **Flight-time height**: `g·T²/8` from takeoff to landing, comparable to contact mats
-  and the My Jump app. It reads higher if you land with bent knees.
+  and the My Jump app. It differs from the first when the body is lower at landing than at takeoff.
+
+The app only gives instructions about the setup (hands on hips, body and feet in view).
+How the jump is performed is up to the athlete and their coach.
 
 ## Use
 
 1. Put the phone (or laptop) 2–3 m away, so your whole body including the feet is in view.
    Lying on the floor tilted up works.
-2. **Front camera** / **Back camera**: live measurement. Jump with hands on hips, land
-   with straight legs, and wait a second after landing.
-3. **Open video…**: analyse a recording frame by frame. Most accurate with the phone's
+2. Press **Start** (the round button). When the status turns green (**Ready**), jump with
+   hands on hips. The height appears on top of the video and is spoken out loud
+   (speaker icon to turn off). The camera switch button flips between front and back camera.
+3. **Film icon**: analyse a recording frame by frame. Most accurate with the phone's
    slow-motion mode (120/240 fps). Android slow-motion files are converted to real time
    automatically.
 
