@@ -84,12 +84,14 @@ export async function processVideo(
         onProgress(span && Number.isFinite(span) ? Math.min(1, Math.max(0, (t - Math.max(0, from)) / span)) : 0);
         if (video.ended) return done();
         video.requestVideoFrameCallback(step);
-        video.play().catch(fail);
+        play();
       };
+      // A pause() in the next frame callback can interrupt play() (AbortError): that's expected.
+      const play = () => video.play().catch((e) => { if ((e as Error).name !== "AbortError") fail(e); });
       video.onended = () => done();
       signal.addEventListener("abort", () => fail(new DOMException("aborted", "AbortError")), { once: true });
       video.requestVideoFrameCallback(step);
-      video.play().catch(fail);
+      play();
     });
   } finally {
     video.onended = null;
