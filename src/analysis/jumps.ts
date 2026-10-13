@@ -71,7 +71,8 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     const t0 = s.t[i0], t1 = s.t[i1];
     const floorBefore = windowMedian(s.t, s.toe, t0 - 0.6, t0 - 0.1) ?? floor[i0];
     const floorAfter = windowMedian(s.t, s.toe, t1 + 0.1, t1 + 0.6) ?? floorBefore;
-    const bodyPx = windowMedian(s.t, s.bodyPx, t0 - 1.0, t0 - 0.1) ?? bodyAll;
+    // Upright size: the countermovement crouch and the landing shrink the body.
+    const bodyPx = windowQuantile(s.t, s.bodyPx, t0 - 3, t1 + 3, 0.9) ?? bodyAll;
 
     const tt = idx.map((i) => s.t[i]);
     const toeFit = fitQuadratic(tt, idx.map((i) => s.toe[i]));
@@ -128,9 +129,15 @@ function rollingPercentile(t: number[], y: number[], halfWidth: number, p: numbe
 }
 
 function windowMedian(t: number[], y: number[], from: number, to: number): number | null {
+  return windowQuantile(t, y, from, to, 0.5);
+}
+
+function windowQuantile(t: number[], y: number[], from: number, to: number, p: number): number | null {
   const w: number[] = [];
   for (let i = 0; i < t.length; i++) if (t[i] >= from && t[i] <= to && Number.isFinite(y[i])) w.push(y[i]);
-  return w.length >= 3 ? median(w) : null;
+  if (w.length < 3) return null;
+  w.sort((a, b) => a - b);
+  return p === 0.5 ? median(w) : w[Math.floor(p * (w.length - 1))];
 }
 
 function median(xs: number[]): number {

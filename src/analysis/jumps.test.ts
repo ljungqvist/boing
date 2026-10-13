@@ -42,6 +42,15 @@ describe("findJumps on synthetic CMJs", () => {
     for (const j of jumps) expect(j.flags.length).toBeGreaterThan(0);
   });
 
+  it("takes body size from upright posture, not from the crouch", () => {
+    const s = syntheticSignals({ fps: 60 });
+    // Body looks 30 % shorter during the countermovement dip (1.2–2.0 s).
+    s.t.forEach((t, i) => { if (t > 1.2 && t < 2.0) s.bodyPx[i] *= 0.7; });
+    const [j] = findJumps(s);
+    expect(j.gImplied).toBeGreaterThan(9);
+    expect(j.gImplied).toBeLessThan(10.6);
+  });
+
   it("survives missing frames", () => {
     const s = syntheticSignals({ fps: 60, noise: 0.003 });
     for (let i = 0; i < s.t.length; i += 9) { s.toe[i] = NaN; s.hip[i] = NaN; }
