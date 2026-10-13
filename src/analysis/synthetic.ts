@@ -1,4 +1,4 @@
-import type { Signals } from "./types";
+import type { Landmark, PoseFrame, Signals } from "./types";
 
 /** Test helper: synthetic countermovement jumps rendered as pixel signals. */
 export const G = 9.81;
@@ -84,4 +84,20 @@ function gaussian(seed: number): () => number {
   let x = seed >>> 0 || 1;
   const uni = () => ((x = (Math.imul(x, 1664525) + 1013904223) >>> 0) + 1) / 4294967297;
   return () => Math.sqrt(-2 * Math.log(uni())) * Math.cos(2 * Math.PI * uni());
+}
+
+/** Synthetic jumps as MediaPipe-style landmark frames (for tracker tests). */
+export function syntheticFrames(o: SyntheticOptions = {}): { width: number; height: number; frames: PoseFrame[] } {
+  const s = syntheticSignals(o);
+  const width = 720, height = 1280, floorPx = 100; // floor 100 px above the image bottom
+  const y = (upPx: number) => (height - (upPx + floorPx)) / height;
+  const frames = s.t.map((t, i) => {
+    const lm: Landmark[] = Array.from({ length: 33 }, () => [0.5, 0.5, 0, 0.9] as Landmark);
+    const set = (idx: number[], up: number) => idx.forEach((k) => (lm[k] = [0.5, y(up), 0, 0.9]));
+    set([23, 24], s.hip[i]);
+    set([29, 30, 31, 32], s.toe[i]);
+    set([0], s.toe[i] + s.bodyPx[i]);
+    return { t, lm };
+  });
+  return { width, height, frames };
 }
