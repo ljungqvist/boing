@@ -13,6 +13,8 @@ test("live camera: keeps measuring after the first jump", async ({ page }) => {
   test.skip(!existsSync(Y4M), "fake camera file missing (tools/make_y4m.py own/20261013_174604.mp4)");
   await page.goto("/");
   await page.click("#start");
+  // The camera picture must not be cropped (portrait 360x640 source): cropping can cut off the feet.
+  await expect.poll(() => page.evaluate(() => { const v = document.getElementById("video") as HTMLVideoElement; return v.videoHeight / (v.videoWidth || 1); })).toBeCloseTo(640 / 360, 1);
   // The latest height is shown large on top of the video right after the jump.
   await expect(page.locator("#flash")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#flash")).toContainText("cm");
@@ -68,4 +70,24 @@ test("live camera: shows the picture and loading progress while the model downlo
   await page.click("#start");
   await page.click("#start");
   await expect(page.locator("#status")).toHaveText(/Ready|Looking for you|not visible|Jump/, { timeout: 5_000 });
+});
+
+test("live camera: a slow phone switches to the lite model", async ({ page }) => {
+  test.skip(!existsSync(Y4M), "fake camera file missing");
+  // Pose model on the CPU, so CPU throttling makes it slow like an older phone.
+  await page.goto("/?delegate=cpu");
+  await page.evaluate(() => localStorage.removeItem("boing.model"));
+  await page.click("#start");
+  await expect(page.locator("#status")).toHaveText(/Ready|Looking for you|not visible|Jump|low frame rate/, { timeout: 60_000 });
+  // Make this "phone" slow.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 12 });
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("boing.model")), { timeout: 60_000 }).toBe("lite");
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  // Still measuring after the switch.
+  const before: number = await page.evaluate(() => (window as any).boing.results.filter((r: any) => r.accepted).length);
+  await expect.poll(
+    () => page.evaluate(() => (window as any).boing.results.filter((r: any) => r.accepted).length),
+    { timeout: 60_000 },
+  ).toBeGreaterThan(before);
 });

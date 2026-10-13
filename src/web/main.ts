@@ -25,6 +25,8 @@ const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
 const NOTE_TEXT: Partial<Record<JumpFlag, string>> = {
   "camera-moved": "The camera moved during this jump; the result may be less accurate.",
 };
+/** Below this many analysed frames per second, jumps get too few frames in the air. */
+const MIN_FPS = 22;
 /** How long the latest height stays on top of the video. */
 const FLASH_MS = 5000;
 /** Live sessions keep this much pose data for "Save session". */
@@ -64,18 +66,19 @@ const soundBtn = $<HTMLButtonElement>("sound");
 const details = $<HTMLElement>("details");
 const menuSheet = $<HTMLElement>("menu-sheet");
 const ignoredEl = $<HTMLDetailsElement>("ignored");
-const statureInput = $<HTMLInputElement>("stature");
 
 renderIcons();
 
 const poses: Partial<Record<ModelKind, Promise<Pose>>> = {};
 /** Latest loading step, shown in the status line until the model is ready. */
 let poseStep = "Loading…";
+/** Debug: `?delegate=cpu` forces the CPU (e.g. to test slow-phone behaviour). */
+const delegates: ("GPU" | "CPU")[] = new URLSearchParams(location.search).get("delegate") === "cpu" ? ["CPU"] : ["GPU", "CPU"];
 const getPose = (k: ModelKind) =>
   (poses[k] ??= Pose.create(k, (text) => {
     poseStep = text;
     if (app.state === "loading") setStatus(text, "idle");
-  }).catch((e) => {
+  }, delegates).catch((e) => {
     delete poses[k]; // allow a retry
     throw e;
   }));
@@ -91,11 +94,6 @@ let jumps: { jump: Jump; signals: Signals; fps: number }[] = [];
 let ignored = 0;
 /** Pose data of the current/last live session, for "Save session". */
 let session: { frames: PoseFrame[]; width: number; height: number; meta: Record<string, unknown> } | null = null;
-
-const stature = () => {
-  const cm = Number(statureInput.value);
-  return cm >= 100 && cm <= 230 ? cm / 100 : 1.75;
-};
 
 type Pill = "idle" | "ready" | "adjust" | "air" | "error";
 function setStatus(text: string, pill: Pill = "idle", state?: typeof app.state) {
@@ -234,12 +232,18 @@ async function startLive() {
   const run = ++liveRun;
   // Camera first, so you see yourself while the pose model loads in the background.
   setStatus("Waiting for the camera…", "idle", "loading");
-  const posePromise = getPose("full");
+  // Slow phones get the lighter model (remembered from an earlier session).
+  // Debug: `?model=full|lite|heavy` pins the model (no automatic switching).
+  const pinned = new URLSearchParams(location.search).get("model") as ModelKind | null;
+  const startKind: ModelKind = pinned ?? (localStorage.getItem("boing.model") === "lite" ? "lite" : "full");
+  const posePromise = getPose(startKind);
   posePromise.catch(() => {}); // handled below
   try {
     let pose: Pose | null = null;
+    let poseSince = 0; // capture time when the current model started analysing
+    let switching = false;
     let frameSeen = false;
-    const tracker = new JumpTracker({ stature: stature() });
+    const tracker = new JumpTracker();
     const history: PoseFrame[] = [];
     app.frames = history;
     let fpsWindow: number[] = [];
@@ -265,6 +269,21 @@ async function startLive() {
       while (history[0].t < t - 20) history.shift();
       fpsWindow.push(t);
       fpsWindow = fpsWindow.filter((x) => x > t - 1);
+      const fps = fpsWindow.length;
+      // After a short warm-up, switch to the lite model if this phone can't keep up.
+      if (!poseSince) poseSince = t;
+      if (!pinned && pose.kind !== "lite" && !switching && t - poseSince > 3 && fps < MIN_FPS) {
+        switching = true;
+        localStorage.setItem("boing.model", "lite");
+        void getPose("lite").then((p) => {
+          if (run !== liveRun) return;
+          p.resetClock();
+          pose = p;
+          poseSince = 0;
+          rec.meta.model = "lite";
+          rec.meta.delegate = p.delegate;
+        });
+      }
 
       const size = { width: video.videoWidth, height: video.videoHeight };
       for (const j of tracker.push(frame, size)) addResult(j, fpsWindow.length, [...history], size, true);
@@ -276,6 +295,7 @@ async function startLive() {
       else if (!visible(31) || !visible(32)) setStatus("Feet not visible · step back", "adjust", "live");
       else if (!visible(23) || !visible(24)) setStatus("Hips not visible · step back", "adjust", "live");
       else if (inAir) setStatus("Jump!", "air", "live");
+      else if (t - poseSince > 2 && fps < MIN_FPS) setStatus(`Ready · low frame rate (${fps} fps)`, "adjust", "live");
       else setStatus("Ready", "ready", "live");
     }), 60_000, "Starting the camera (was the permission question answered?)");
     placeholder.hidden = true;
@@ -291,6 +311,7 @@ async function startLive() {
     if (run !== liveRun) return;
     pose.resetClock();
     session.meta.delegate = pose.delegate;
+    session.meta.model = pose.kind;
   } catch (e) {
     if (run === liveRun) fail(e);
   }
@@ -324,7 +345,7 @@ async function openFile(file: File) {
     const duration = frames.length > 1 ? frames[frames.length - 1].t - frames[0].t : 0;
     const fps = (frames.length - 1) / (duration || 1);
     const size = { width: video.videoWidth, height: video.videoHeight };
-    for (const j of findJumps(toSignals({ ...size, fps, frames }), { stature: stature() })) addResult(j, fps, frames, size, false);
+    for (const j of findJumps(toSignals({ ...size, fps, frames }))) addResult(j, fps, frames, size, false);
     const slow = r.timeScale ? ` · slow motion, captured at ${r.captureFps} fps` : ` · ${fps.toFixed(0)} fps`;
     setStatus(`${jumps.length} jump${jumps.length === 1 ? "" : "s"} found${slow}`, jumps.length ? "ready" : "idle", "done");
     if (jumps.length) showFlash(Math.max(...jumps.map((x) => x.jump.hPrimary)));

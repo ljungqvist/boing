@@ -14,7 +14,11 @@ export class Pose {
   private constructor(private readonly landmarker: PoseLandmarker, readonly delegate: "GPU" | "CPU", readonly kind: ModelKind) {}
 
   /** Load engine + model; `onStep` gets human-readable progress for the status line. */
-  static async create(kind: ModelKind, onStep: (text: string) => void = () => {}): Promise<Pose> {
+  static async create(
+    kind: ModelKind,
+    onStep: (text: string) => void = () => {},
+    delegates: ("GPU" | "CPU")[] = ["GPU", "CPU"],
+  ): Promise<Pose> {
     // Download engine and model ourselves (with progress, cached), so the timeout
     // below only measures the start-up, never a slow mobile connection.
     const mb = (n: number) => (n / 1e6).toFixed(1);
@@ -29,7 +33,7 @@ export class Pose {
     const model = await fetchWithProgress(modelUrl(kind), (got, total) =>
       onStep(`Loading pose model · ${mb(got)} of ${mb(total)} MB`));
     // Some phones hang while setting up the GPU; fall back to the CPU instead of waiting forever.
-    for (const delegate of ["GPU", "CPU"] as const) {
+    for (const delegate of delegates) {
       onStep(delegate === "GPU" ? "Starting pose model…" : "Starting pose model (without GPU)…");
       try {
         const lm = await withTimeout(PoseLandmarker.createFromOptions(fileset, {
@@ -39,7 +43,7 @@ export class Pose {
         }), delegate === "GPU" ? 15_000 : 60_000, `Starting the pose model (${delegate})`);
         return new Pose(lm, delegate, kind);
       } catch (e) {
-        if (delegate === "CPU") throw e;
+        if (delegate === delegates[delegates.length - 1]) throw e;
         console.warn("GPU delegate failed, falling back to CPU", e);
       }
     }
