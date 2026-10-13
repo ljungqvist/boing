@@ -1,0 +1,34 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #111;
+  color: #eee;
+}
+body { margin: 0; }
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem;
+  padding: 0.5rem 1rem; background: #1b1b1b;
+}
+h1 { font-size: 1.2rem; margin: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+button, .button {
+  font: inherit; padding: 0.45rem 0.8rem; border-radius: 6px; border: 1px solid #444;
+  background: #2a2a2a; color: inherit; cursor: pointer;
+}
+.stature input { width: 4rem; font: inherit; }
+main { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem; }
+#stage { position: relative; flex: 1 1 320px; max-width: 720px; }
+#stage.mirrored { transform: scaleX(-1); }
+#stage video, #stage canvas { width: 100%; display: block; }
+#stage canvas { position: absolute; inset: 0; height: 100%; }
+aside { flex: 1 1 280px; max-width: 480px; }
+#status { padding: 0.5rem 0; color: #bbb; min-height: 2.5em; }
+#plot { width: 100%; height: 160px; background: #1b1b1b; border-radius: 6px; }
+#results { list-style: none; padding: 0; margin: 0.5rem 0; }
+.result { padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; background: #1e1e1e; border-radius: 6px; cursor: pointer; }
+.result.selected { outline: 1px solid #4a90d9; }
+.height { font-size: 2rem; font-weight: 600; }
+.height small { font-size: 1rem; font-weight: 400; color: #aaa; }
+.detail { color: #aaa; font-size: 0.9rem; }
+.warning { color: #f5a623; font-size: 0.9rem; margin-top: 0.25rem; }
+#ignored { color: #777; font-size: 0.85rem; }
