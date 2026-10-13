@@ -28,3 +28,14 @@ console.log("\nwhole session at once:");
 for (const j of findJumps(toSignals(s))) {
   console.log(`  t=${j.tOff.toFixed(2)}  ${(j.hPrimary * 100).toFixed(1)} / ${(j.hFlight * 100).toFixed(1)} cm  g ${j.gImplied.toFixed(1)}  ${j.flags.join(",")}`);
 }
+
+// Refined jumps (sessions saved after continuous recording): the analysed frames of each piece.
+const refined = ((s as { jumps?: { tOff: number; hLive: number; model?: string; refined?: PoseVideo & { start: number } }[] }).jumps ?? [])
+  .filter((j) => j.refined);
+if (refined.length) console.log("\nrefined pieces:");
+for (const j of refined) {
+  const r = j.refined!;
+  const found = findJumps(toSignals(r)).map((x) =>
+    `t=${(x.tOff + r.start).toFixed(2)} ${(x.hPrimary * 100).toFixed(1)} / ${(x.hFlight * 100).toFixed(1)} cm, ${x.airborneFrames} frames ${x.flags.join(",")}`);
+  console.log(`  live t=${j.tOff.toFixed(2)} ${(j.hLive * 100).toFixed(1)} cm (${j.model}, ${r.frames.length} frames @ ${r.fps.toFixed(1)} fps): ${found.join(" | ")}`);
+}

@@ -247,7 +247,9 @@ async function refineLive(
     const r = result.jump;
     Object.assign(log, {
       h: r.hPrimary, hFlight: r.hFlight, frames: r.airborneFrames, fps: result.fps, offset: result.offset, flags: r.flags,
-      decoder: result.decoder, analysed: result.frames.length,
+      decoder: result.decoder, analysed: result.frames.length, model: result.model,
+      // The analysed frames, to replay the refinement offline (tools/replay.ts).
+      refined: { width: result.size.width, height: result.size.height, fps: result.fps, start: piece!.start, frames: result.frames },
     });
     addResult(r, result.fps, result.frames, result.size, true,
       { refined: true, approximate: false, framesLive: j.airborneFrames, framesRefined: r.airborneFrames });
@@ -346,7 +348,11 @@ async function startLive() {
   // Slow phones get the lighter model (remembered from an earlier session).
   // Debug: `?model=full|lite|heavy` pins the model (no automatic switching).
   const pinned = new URLSearchParams(location.search).get("model") as ModelKind | null;
-  const startKind: ModelKind = pinned ?? (localStorage.getItem("boing.model") === "lite" ? "lite" : "full");
+  // With continuous recording, live analysis only has to notice jumps; each one is measured
+  // again from the recording with the same model, so keep the more precise full model
+  // (lite read jumps up to twice too high on a slow phone).
+  const willRecord = REFINE && RollingRecorder.supported();
+  const startKind: ModelKind = pinned ?? (!willRecord && localStorage.getItem("boing.model") === "lite" ? "lite" : "full");
   const posePromise = getPose(startKind);
   posePromise.catch(() => {}); // handled below
   try {
@@ -408,7 +414,7 @@ async function startLive() {
       // Recording starts once the model has been running for a moment: starting it together
       // with the model's first detections stalled the camera's frames for good (Chrome).
       if (t - poseSince > 1) recording?.start();
-      if (!pinned && pose.kind !== "lite" && !switching && t - poseSince > 3 && fps < MIN_FPS) {
+      if (!pinned && !willRecord && pose.kind !== "lite" && !switching && t - poseSince > 3 && fps < MIN_FPS) {
         switching = true;
         localStorage.setItem("boing.model", "lite");
         void getPose("lite").then((p) => {

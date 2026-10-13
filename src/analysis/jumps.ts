@@ -74,10 +74,15 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     // Upright size: the countermovement crouch and the landing shrink the body.
     const bodyPx = windowQuantile(s.t, s.bodyPx, t0 - 3, t1 + 3, 0.9) ?? bodyAll;
 
-    const tt = idx.map((i) => s.t[i]);
-    const toeFit = fitQuadratic(tt, idx.map((i) => s.toe[i]));
-    const hipFit = fitQuadratic(tt, idx.map((i) => s.hip[i]));
-    const [tOff, tOn] = quadraticRoots(toeFit, floorBefore) ?? [t0, t1];
+    // Fit only the flight; with toe creep trimmed, the edges are at the toe level where the
+    // fast rise starts and the fast fall ends.
+    const fl = trimCreep(s, idx, Math.max(3 * sigma, 0.01 * bodyPx), floorBefore, thr, bodyPx);
+    const level = (c: number | null) => (c !== null ? s.toe[c] : floorBefore);
+    const tt = fl.frames.map((i) => s.t[i]);
+    const toeFit = fitQuadratic(tt, fl.frames.map((i) => s.toe[i]));
+    const hipFit = fitQuadratic(tt, fl.frames.map((i) => s.hip[i]));
+    const tOff = quadraticRoots(toeFit, level(fl.before))?.[0] ?? t0;
+    const tOn = quadraticRoots(toeFit, level(fl.after))?.[1] ?? t1;
     const tApex = hipFit.vertex;
 
     const pxPerMetre = bodyPx / (NOSE_TO_HEEL_PER_STATURE * stature);
@@ -87,7 +92,7 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
 
     const j: Jump = {
       tOff, tOn, tApex, hPrimary, hFlight,
-      airborneFrames: idx.length,
+      airborneFrames: fl.frames.length,
       gImplied,
       hipRmsRel: hipFit.rms / bodyPx,
       toeRmsRel: toeFit.rms / bodyPx,
@@ -106,6 +111,65 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     jumps.push(j);
   }
   return jumps;
+}
+
+/** A fast toe step: at least this fraction of the jump's fastest rise (or fall). */
+const FAST = 0.25;
+/** Longest and highest toe creep that is trimmed (seconds, fraction of body height). */
+const MAX_CREEP_S = 0.4;
+const MAX_CREEP_BODY = 0.1;
+/** Toe speed is measured over at least this many seconds (keeps 240 fps noise down). */
+const SPEED_SPAN = 0.05;
+
+/**
+ * Trims slow toe motion off both ends of an airborne run. Lighter pose models lift the
+ * toe point slowly while the heels rise in the push-off and after landing; the real
+ * takeoff is the first fast rise, the landing the last fast fall. `before`/`after` are
+ * the trimmed contact frames next to the flight, or null when nothing was trimmed.
+ */
+function trimCreep(
+  s: Signals, run: number[], tol: number, floor: number, thr: number, bodyPx: number,
+): { frames: number[]; before: number | null; after: number | null } {
+  const unchanged = { frames: run, before: null, after: null };
+  // The contact frames can lie just outside the run (creep above the threshold): look around it.
+  const tFrom = s.t[run[0]] - 0.3, tTo = s.t[run[run.length - 1]] + 0.3;
+  const idx: number[] = [];
+  for (let i = 0; i < s.t.length; i++)
+    if (s.t[i] >= tFrom && s.t[i] <= tTo && Number.isFinite(s.toe[i]) && Number.isFinite(s.hip[i])) idx.push(i);
+  // Toe slope (px/s) from frame k to the first frame at least SPEED_SPAN away in direction dir.
+  const slope = (k: number, dir: 1 | -1) => {
+    let j = k + dir;
+    while (j + dir >= 0 && j + dir < idx.length && Math.abs(s.t[idx[j]] - s.t[idx[k]]) < SPEED_SPAN) j += dir;
+    if (j < 0 || j >= idx.length) return 0;
+    return (s.toe[idx[j]] - s.toe[idx[k]]) / (s.t[idx[j]] - s.t[idx[k]]);
+  };
+  let peak = 0;
+  for (let k = 1; k < idx.length; k++) if (s.toe[idx[k]] > s.toe[idx[peak]]) peak = k;
+  // Fastest rise before the peak and fastest fall after it: certainly flight.
+  let kUp = 0, kDown = idx.length - 1;
+  for (let k = 0; k < peak; k++) if (slope(k, 1) > slope(kUp, 1)) kUp = k;
+  for (let k = peak + 1; k < idx.length; k++) if (slope(k, -1) < slope(kDown, -1)) kDown = k;
+  const up = slope(kUp, 1), down = -slope(kDown, -1);
+  if (up <= 0 || down <= 0) return unchanged;
+  // Walk outwards while the toes stay fast; then over frames still at that contact level.
+  let a = kUp, b = kDown;
+  while (a > 0 && slope(a - 1, 1) >= FAST * up) a--;
+  while (b < idx.length - 1 && -slope(b + 1, -1) >= FAST * down) b++;
+  const levelA = s.toe[idx[a]], levelB = s.toe[idx[b]];
+  while (a < peak - 1 && s.toe[idx[a + 1]] <= levelA + tol) a++;
+  while (b > peak + 1 && s.toe[idx[b - 1]] <= levelB + tol) b--;
+  // Creep is small and short; no creep (contact at floor level) or something else
+  // (a raised foot, walking) leaves that side as it was.
+  const creep = (k: number, edge: number) => {
+    const lift = s.toe[idx[k]] - floor;
+    return lift > thr && lift <= MAX_CREEP_BODY * bodyPx && Math.abs(s.t[idx[k]] - s.t[edge]) <= MAX_CREEP_S;
+  };
+  const trimA = creep(a, run[0]), trimB = creep(b, run[run.length - 1]);
+  if (!trimA && !trimB) return unchanged;
+  const start = trimA ? a + 1 : idx.indexOf(run[0]);
+  const end = trimB ? b - 1 : idx.indexOf(run[run.length - 1]);
+  if (end - start + 1 < 5) return unchanged;
+  return { frames: idx.slice(start, end + 1), before: trimA ? idx[a] : null, after: trimB ? idx[b] : null };
 }
 
 /** Robust per-frame noise estimate from first differences. */

@@ -72,10 +72,11 @@ test("live camera: shows the picture and loading progress while the model downlo
   await expect(page.locator("#status")).toHaveText(/Ready|Looking for you|not visible|Jump/, { timeout: 5_000 });
 });
 
-test("live camera: a slow phone switches to the lite model", async ({ page }) => {
+test("live camera without recording: a slow phone switches to the lite model", async ({ page }) => {
   test.skip(!existsSync(Y4M), "fake camera file missing");
   // Pose model on the CPU, so CPU throttling makes it slow like an older phone.
-  await page.goto("/?delegate=cpu");
+  // With continuous recording the full model stays (jumps are measured again from the recording).
+  await page.goto("/?delegate=cpu&refine=off");
   await page.evaluate(() => localStorage.removeItem("boing.model"));
   await page.click("#start");
   await expect(page.locator("#status")).toHaveText(/Ready|Looking for you|not visible|Jump|low frame rate/, { timeout: 60_000 });
