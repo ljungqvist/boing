@@ -20,9 +20,9 @@ export async function startCamera(
 ): Promise<CameraSession> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    // A smaller picture is enough (the pose model works at 256 px) and keeps slow phones fast.
-    // Keep 16:9: asking for another shape can make the camera crop the picture (feet!).
-    video: { facingMode: facing, width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 60 } },
+    // 1280x720 is known to arrive uncropped (also on phones in portrait). Smaller requests
+    // can make the camera crop the picture to the requested size, cutting off the feet.
+    video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
   });
   video.srcObject = stream;
   video.muted = true;
