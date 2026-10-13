@@ -27,6 +27,8 @@ export interface Refined {
   offset: number;
   /** How the piece was decoded: WebCodecs (every frame) or stepping a hidden video (fallback). */
   decoder: "webcodecs" | "video";
+  /** Pose model used. */
+  model: string;
 }
 export type RefineResult = Refined | { error: string; ms: number; flags?: JumpFlag[] };
 
@@ -102,7 +104,7 @@ export class Refiner {
       const jump = near[0];
       if (!jump) return { error: "no-match", ms: ms() };
       if (jump.flags.some((f) => REJECT.includes(f))) return { error: "rejected", ms: ms(), flags: jump.flags };
-      return { jump, frames, size, fps, ms: ms(), offset: jump.tOff - target, decoder };
+      return { jump, frames, size, fps, ms: ms(), offset: jump.tOff - target, decoder, model: p.kind };
     } catch (e) {
       if (outer?.aborted) return { error: "cancelled", ms: ms() };
       if (abort.signal.aborted) return { error: "timeout", ms: ms() };

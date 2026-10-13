@@ -21,6 +21,11 @@ export interface SyntheticOptions {
   /** Real-time seconds per video second; 2 = 2× slow motion. */
   slowMotion?: number;
   seed?: number;
+  /**
+   * Apparent toe lift in metres while the feet are still on the floor: the pose model
+   * (lite/full) lifts the toe point as the heels rise in the push-off and after landing.
+   */
+  toeCreep?: number;
 }
 
 const HIP_STAND = 1.0; // metres above floor
@@ -28,7 +33,7 @@ const DIP = 0.3;
 const RISE_AT_TAKEOFF = 0.08;
 
 /** Hip and toe height (metres) at real time t. */
-export function bodyAt(t: number, jumps: SyntheticJump[]): { hip: number; toe: number } {
+export function bodyAt(t: number, jumps: SyntheticJump[], creep = 0): { hip: number; toe: number } {
   for (const j of jumps) {
     const v0 = Math.sqrt(2 * G * j.height);
     const tf = (2 * v0) / G;
@@ -37,17 +42,17 @@ export function bodyAt(t: number, jumps: SyntheticJump[]): { hip: number; toe: n
     if (t >= tStart && t < tLow)
       return { hip: quintic(t, tStart, tLow, [HIP_STAND, 0, 0], [HIP_STAND - DIP, 0, 15]), toe: 0 };
     if (t >= tLow && t < j.tTakeoff)
-      return { hip: quintic(t, tLow, j.tTakeoff, [HIP_STAND - DIP, 0, 15], [yTo, v0, -G]), toe: 0 };
+      return { hip: quintic(t, tLow, j.tTakeoff, [HIP_STAND - DIP, 0, 15], [yTo, v0, -G]), toe: (creep * (t - tLow)) / 0.3 };
     if (t >= j.tTakeoff && t < tLand) {
       const x = t - j.tTakeoff;
       const hip = yTo + v0 * x - (G / 2) * x * x;
-      return { hip, toe: hip - yTo };
+      return { hip, toe: hip - yTo + creep };
     }
     if (t >= tLand && t < tLand + 0.6) {
       const x = Math.min(t - tLand, 0.3);
       const absorb = yTo - v0 * x + 0.5 * (v0 / 0.3) * x * x - (0.1 * x) / 0.3;
       const recover = t - tLand > 0.3 ? ((t - tLand - 0.3) / 0.3) * (HIP_STAND - (yTo - v0 * 0.15 - 0.1)) : 0;
-      return { hip: Math.min(HIP_STAND, absorb + recover), toe: 0 };
+      return { hip: Math.min(HIP_STAND, absorb + recover), toe: creep * Math.max(0, 1 - (t - tLand) / 0.4) };
     }
   }
   return { hip: HIP_STAND, toe: 0 };
@@ -61,7 +66,7 @@ export function syntheticSignals(o: SyntheticOptions = {}): Signals {
   const phase = (o.seed ?? 1) % 7 / 7 / fps; // sub-frame sampling offset
   const s: Signals = { t: [], hip: [], toe: [], bodyPx: [] };
   for (let t = phase; t < dur; t += 1 / fps) {
-    const b = bodyAt(t / slow, jumps);
+    const b = bodyAt(t / slow, jumps, o.toeCreep ?? 0);
     s.t.push(t);
     s.hip.push((b.hip + noise * rand()) * ppm);
     s.toe.push((b.toe + noise * rand()) * ppm);

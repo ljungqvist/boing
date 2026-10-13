@@ -18,6 +18,19 @@ describe("findJumps on synthetic CMJs", () => {
     });
   }
 
+  for (const fps of [30, 60]) {
+    it(`ignores the toe point creeping up before takeoff and after landing (${fps} fps)`, () => {
+      // Seen with the lite/full pose models: the toe point rises ~5 % of body height in the push-off.
+      const jumps = findJumps(syntheticSignals({ fps, noise: 0.005, seed: fps + 1, toeCreep: 0.08 }));
+      expect(jumps).toHaveLength(1);
+      const j = jumps[0];
+      expect(Math.abs(j.hPrimary - 0.3)).toBeLessThan(0.015);
+      expect(Math.abs(j.hFlight - 0.3)).toBeLessThan(0.015);
+      expect(Math.abs(j.tOff - 2)).toBeLessThan(0.015);
+      expect(j.flags).toEqual([]);
+    });
+  }
+
   it("finds two jumps", () => {
     const s = syntheticSignals({ duration: 7, jumps: [{ tTakeoff: 2, height: 0.25 }, { tTakeoff: 5, height: 0.4 }] });
     const jumps = findJumps(s);
