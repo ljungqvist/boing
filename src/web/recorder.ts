@@ -72,7 +72,7 @@ export class RollingRecorder {
   }
 
   start(): void {
-    if (this.running || !this.mimeType) return;
+    if (this.running || !this.mimeType || this.error) return;
     this.running = true;
     this.startPiece();
     this.interval = window.setInterval(() => this.startPiece(), this.stagger * 1000);
@@ -104,7 +104,6 @@ export class RollingRecorder {
     const piece: Piece = { start: NaN, end: Infinity, blob: null };
     rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     rec.onstart = () => {
-      piece.start = this.clock();
       this.list.push(piece);
       const timer = window.setTimeout(() => {
         this.timers = this.timers.filter((t) => t !== timer);
@@ -122,6 +121,8 @@ export class RollingRecorder {
     rec.onerror = (e) => this.fail((e as unknown as { error?: unknown }).error ?? e);
     this.active.set(rec, piece);
     try {
+      // Recording begins with the frames after this call; `onstart` can fire much later on a busy page.
+      piece.start = this.clock();
       rec.start();
     } catch (e) {
       this.active.delete(rec);
