@@ -10,6 +10,15 @@ import { Pose, type ModelKind } from "./pose";
 
 /** Flags that mean "this was not a jump", rather than "a jump with a caveat". */
 const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible"];
+const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
+  "not-parabola": "no free-fall curve",
+  "few-frames": "too short",
+  "g-implausible": "speed doesn't match gravity",
+};
+/** How long the latest height stays on top of the video. */
+const FLASH_MS = 5000;
+/** Live sessions keep this much pose data for "Save session". */
+const SESSION_SECONDS = 180;
 const WARNING_TEXT: Partial<Record<JumpFlag, string>> = {
   "poor-fit": "Unclear flight curve: keep your legs straight in the air.",
   disagree: "Landing differs from takeoff: land with straight legs, like you took off.",
@@ -41,7 +50,8 @@ const overlay = $<HTMLCanvasElement>("overlay");
 const stage = $<HTMLDivElement>("stage");
 const status = $<HTMLDivElement>("status");
 const resultsEl = $<HTMLOListElement>("results");
-const ignoredEl = $<HTMLDivElement>("ignored");
+const ignoredEl = $<HTMLDetailsElement>("ignored");
+const flash = $<HTMLDivElement>("flash");
 const plot = $<HTMLCanvasElement>("plot");
 const statureInput = $<HTMLInputElement>("stature");
 
@@ -51,6 +61,9 @@ const getPose = (k: ModelKind) => (poses[k] ??= Pose.create(k));
 let camera: CameraSession | null = null;
 let abort: AbortController | null = null;
 let ignored = 0;
+let flashTimer: number | undefined;
+/** Pose data of the current/last live session, for "Save session". */
+let session: { frames: PoseFrame[]; width: number; height: number; meta: Record<string, unknown> } | null = null;
 
 const stature = () => {
   const cm = Number(statureInput.value);
@@ -75,8 +88,10 @@ function clearResults() {
   app.results = [];
   resultsEl.innerHTML = "";
   ignored = 0;
-  ignoredEl.textContent = "";
+  ignoredEl.hidden = true;
+  ignoredEl.querySelector("ul")!.innerHTML = "";
   plot.hidden = true;
+  flash.hidden = true;
 }
 
 function addResult(j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number }) {
@@ -84,9 +99,15 @@ function addResult(j: Jump, fps: number, frames: PoseFrame[], size: { width: num
   app.results.push({ hPrimary: j.hPrimary, hFlight: j.hFlight, flight: j.tOn - j.tOff, fps, flags: j.flags, accepted });
   if (!accepted) {
     ignored++;
-    ignoredEl.textContent = `${ignored} other movement${ignored > 1 ? "s" : ""} ignored (not a clean jump).`;
+    ignoredEl.hidden = false;
+    ignoredEl.querySelector("summary")!.textContent = `${ignored} other movement${ignored > 1 ? "s" : ""} ignored (not a clean jump)`;
+    const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
+    const item = document.createElement("li");
+    item.textContent = `at ${j.tOff.toFixed(1)} s: ${reason} (would be ${(j.hPrimary * 100).toFixed(0)} cm, g ${j.gImplied.toFixed(1)})`;
+    ignoredEl.querySelector("ul")!.prepend(item);
     return;
   }
+  showFlash(j.hPrimary);
   const n = resultsEl.children.length + 1;
   const li = document.createElement("li");
   li.className = "result";
@@ -120,6 +141,8 @@ async function startLive(facing: Facing) {
     let fpsWindow: number[] = [];
     stage.classList.toggle("mirrored", facing === "user");
 
+    session = { frames: [], width: 0, height: 0, meta: { facing } };
+    const rec = session;
     camera = await startCamera(video, facing, (t, dropped) => {
       const lm = pose.detect(video, t * 1000);
       overlay.width = video.videoWidth;
@@ -127,6 +150,10 @@ async function startLive(facing: Facing) {
       drawSkeleton(overlay, lm, false);
 
       const frame = { t, lm };
+      rec.width = video.videoWidth;
+      rec.height = video.videoHeight;
+      rec.frames.push(frame);
+      if (rec.frames.length > 1 && rec.frames[0].t < t - SESSION_SECONDS) rec.frames.shift();
       history.push(frame);
       while (history[0].t < t - 20) history.shift();
       fpsWindow.push(t);
@@ -139,7 +166,8 @@ async function startLive(facing: Facing) {
       setStatus(
         !lm ? "No person in view." :
         !feet ? "Feet not visible: move back or tilt the camera down." :
-        `Ready: jump with hands on hips. ${fpsWindow.length} fps analysed${dropped ? ", frames dropped" : ""}.`,
+        `Ready: jump with hands on hips. ${fpsWindow.length} fps analysed${dropped ? ", frames dropped" : ""}` +
+          ` (${camera?.timing.source ?? "…"}${camera?.timing.stalled ? `, ${camera.timing.stalled} stalled timestamps` : ""}).`,
         "live",
       );
     });
@@ -186,6 +214,29 @@ async function openFile(file: File) {
   }
 }
 
+/** The latest height in large type on top of the video, for a few seconds. */
+function showFlash(h: number) {
+  flash.innerHTML = `${(h * 100).toFixed(1)} <small>cm</small>`;
+  flash.hidden = false;
+  clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => (flash.hidden = true), FLASH_MS);
+}
+
+function saveSession() {
+  if (!session || session.frames.length === 0) {
+    setStatus("Nothing to save yet: start a camera first.");
+    return;
+  }
+  const meta = { ...session.meta, userAgent: navigator.userAgent, timing: camera?.timing, savedAt: new Date().toISOString() };
+  const fps = session.frames.length / Math.max(1e-3, session.frames[session.frames.length - 1].t - session.frames[0].t);
+  const blob = new Blob([JSON.stringify({ ...session, fps, meta })], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `boing-session-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+}
+
 function fail(e: unknown) {
   console.error(e);
   app.error = String((e as Error)?.message ?? e);
@@ -194,6 +245,7 @@ function fail(e: unknown) {
 
 $("front").addEventListener("click", () => startLive("user"));
 $("back").addEventListener("click", () => startLive("environment"));
+$("save").addEventListener("click", saveSession);
 $("stop").addEventListener("click", async () => { await stopAll(); setStatus("Stopped.", "idle"); });
 $<HTMLInputElement>("file").addEventListener("change", (e) => {
   const f = (e.target as HTMLInputElement).files?.[0];

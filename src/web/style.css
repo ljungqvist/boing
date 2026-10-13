@@ -17,7 +17,16 @@ button, .button {
 }
 .stature input { width: 4rem; font: inherit; }
 main { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem; }
-#stage { position: relative; flex: 1 1 320px; max-width: 720px; }
+#viewer { position: relative; flex: 1 1 320px; max-width: 720px; }
+#stage { position: relative; }
+#stage video { max-height: 75vh; object-fit: contain; }
+#flash {
+  position: absolute; left: 50%; top: 8%; transform: translateX(-50%);
+  padding: 0.2em 0.5em; border-radius: 0.3em; background: rgba(0, 0, 0, 0.6);
+  font-size: clamp(3rem, 14vw, 7rem); font-weight: 700; line-height: 1.1; white-space: nowrap;
+  pointer-events: none;
+}
+#flash small { font-size: 0.45em; font-weight: 400; }
 #stage.mirrored { transform: scaleX(-1); }
 #stage video, #stage canvas { width: 100%; display: block; }
 #stage canvas { position: absolute; inset: 0; height: 100%; }
@@ -32,3 +41,4 @@ aside { flex: 1 1 280px; max-width: 480px; }
 .detail { color: #aaa; font-size: 0.9rem; }
 .warning { color: #f5a623; font-size: 0.9rem; margin-top: 0.25rem; }
 #ignored { color: #777; font-size: 0.85rem; }
+#ignored ul { margin: 0.25rem 0; padding-left: 1.2rem; }

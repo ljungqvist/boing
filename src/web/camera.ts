@@ -2,6 +2,8 @@ export type Facing = "user" | "environment";
 
 export interface CameraSession {
   stop(): void;
+  /** Which frame timestamp the browser provides, and how often it failed to advance. */
+  timing: { source: "captureTime" | "mediaTime" | "none"; stalled: number };
   /** Frame rate the camera reports, if any. */
   reportedFps?: number;
   label: string;
@@ -26,13 +28,18 @@ export async function startCamera(
   await video.play();
 
   let running = true;
+  const timing: CameraSession["timing"] = { source: "none", stalled: 0 };
   let lastPresented = -1;
   let lastT = -Infinity;
   const tick = (_now: number, meta: VideoFrameCallbackMetadata) => {
     if (!running) return;
     // Prefer the capture timestamp; fall back to the media time.
     let t = meta.captureTime !== undefined ? meta.captureTime / 1000 : meta.mediaTime;
-    if (!(t > lastT)) t = lastT + 1e-3;
+    timing.source = meta.captureTime !== undefined ? "captureTime" : "mediaTime";
+    if (!(t > lastT)) {
+      timing.stalled++;
+      t = lastT + 1e-3;
+    }
     lastT = t;
     const dropped = lastPresented < 0 ? 0 : Math.max(0, meta.presentedFrames - lastPresented - 1);
     lastPresented = meta.presentedFrames;
@@ -44,6 +51,7 @@ export async function startCamera(
   const track = stream.getVideoTracks()[0];
   return {
     reportedFps: track.getSettings().frameRate,
+    timing,
     label: track.label,
     stop() {
       running = false;
