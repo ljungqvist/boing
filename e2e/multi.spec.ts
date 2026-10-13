@@ -47,3 +47,25 @@ test("live camera: a session can be saved for offline replay", async ({ page }) 
   expect(session.width).toBeGreaterThan(0);
   expect(session.meta.timing.source).toMatch(/captureTime|mediaTime/);
 });
+
+test("live camera: shows the picture and loading progress while the model downloads", async ({ page }) => {
+  test.skip(!existsSync(Y4M), "fake camera file missing");
+  // Simulate a slow connection: hold the model download for 6 s.
+  await page.route(/pose_landmarker_full\.task/, async (route) => {
+    await new Promise((r) => setTimeout(r, 6000));
+    await route.continue();
+  });
+  await page.goto("/");
+  await page.evaluate(async () => { for (const k of await caches.keys()) await caches.delete(k); });
+  await page.click("#start");
+  await expect(page.locator("#status")).toContainText(/Loading pose/, { timeout: 10_000 });
+  // The camera picture is already visible while the model loads.
+  await expect.poll(() => page.evaluate(() => (document.getElementById("video") as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(2);
+  await expect(page.locator("#placeholder")).toBeHidden();
+  // Once loaded, measuring starts.
+  await expect(page.locator("#status")).toHaveText(/Ready|Looking for you|not visible|Jump/, { timeout: 60_000 });
+  // A second start reuses the loaded model immediately.
+  await page.click("#start");
+  await page.click("#start");
+  await expect(page.locator("#status")).toHaveText(/Ready|Looking for you|not visible|Jump/, { timeout: 5_000 });
+});

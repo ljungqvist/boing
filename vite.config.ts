@@ -28,8 +28,14 @@ function mediapipeWasm(): Plugin {
 }
 
 // HTTPS (self-signed) so phones on the same network may use the camera: `npm run dev -- --host`.
+const mediapipeVersion: string = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "node_modules/@mediapipe/tasks-vision/package.json"), "utf8"),
+).version;
+
 export default defineConfig(({ mode }) => ({
   base: "./",
+  // Cache-busts the downloaded engine when the MediaPipe version changes.
+  define: { __MEDIAPIPE_VERSION__: JSON.stringify(mediapipeVersion) },
   plugins: [mediapipeWasm(), ...(mode === "e2e" ? [] : [basicSsl()])],
   server: { port: 5173 },
 }));
