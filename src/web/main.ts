@@ -7,6 +7,7 @@ import { startCamera, type CameraSession, type Facing } from "./camera";
 import { drawJumpPlot, drawSkeleton } from "./draw";
 import { Feedback, WakeLock } from "./feedback";
 import { processFile } from "./file";
+import { withTimeout } from "./load";
 import { ICONS, renderIcons } from "./icons";
 import { Pose, type ModelKind } from "./pose";
 
@@ -68,7 +69,16 @@ const statureInput = $<HTMLInputElement>("stature");
 renderIcons();
 
 const poses: Partial<Record<ModelKind, Promise<Pose>>> = {};
-const getPose = (k: ModelKind) => (poses[k] ??= Pose.create(k));
+/** Latest loading step, shown in the status line until the model is ready. */
+let poseStep = "Loading…";
+const getPose = (k: ModelKind) =>
+  (poses[k] ??= Pose.create(k, (text) => {
+    poseStep = text;
+    if (app.state === "loading") setStatus(text, "idle");
+  }).catch((e) => {
+    delete poses[k]; // allow a retry
+    throw e;
+  }));
 const feedback = new Feedback(localStorage.getItem("boing.sound") !== "off");
 const wakeLock = new WakeLock();
 
@@ -101,6 +111,7 @@ function setRunning(running: boolean) {
 }
 
 async function stopAll() {
+  liveRun++; // cancels a live start that is still loading
   abort?.abort();
   abort = null;
   camera?.stop();
@@ -214,14 +225,20 @@ function airborne(history: PoseFrame[], lm: Landmark[] | null): boolean {
   return floor - toeY(lm) > 0.04 * body;
 }
 
+let liveRun = 0;
+
 async function startLive() {
   await stopAll();
   clearResults();
   setRunning(true);
-  setStatus("Loading…", "idle", "loading");
+  const run = ++liveRun;
+  // Camera first, so you see yourself while the pose model loads in the background.
+  setStatus("Waiting for the camera…", "idle", "loading");
+  const posePromise = getPose("full");
+  posePromise.catch(() => {}); // handled below
   try {
-    const pose = await getPose("full");
-    pose.resetClock();
+    let pose: Pose | null = null;
+    let frameSeen = false;
     const tracker = new JumpTracker({ stature: stature() });
     const history: PoseFrame[] = [];
     app.frames = history;
@@ -230,8 +247,14 @@ async function startLive() {
     session = { frames: [], width: 0, height: 0, meta: { facing } };
     const rec = session;
 
-    camera = await startCamera(video, facing, (t) => {
+    camera = await withTimeout(startCamera(video, facing, (t) => {
+      if (run !== liveRun) return;
+      frameSeen = true;
       fitOverlay();
+      if (!pose) {
+        setStatus(poseStep, "idle", "loading");
+        return;
+      }
       const lm = pose.detect(video, t * 1000);
       const frame = { t, lm };
       rec.width = video.videoWidth;
@@ -254,11 +277,22 @@ async function startLive() {
       else if (!visible(23) || !visible(24)) setStatus("Hips not visible · step back", "adjust", "live");
       else if (inAir) setStatus("Jump!", "air", "live");
       else setStatus("Ready", "ready", "live");
-    });
-    await wakeLock.acquire();
+    }), 60_000, "Starting the camera (was the permission question answered?)");
     placeholder.hidden = true;
+    void wakeLock.acquire();
+    setStatus(poseStep, "idle", "loading");
+
+    // A camera that starts but never delivers a picture would otherwise look like endless loading.
+    setTimeout(() => {
+      if (run === liveRun && camera && !frameSeen) fail(new Error("The camera started but sends no picture. Try Stop and Start again."));
+    }, 10_000);
+
+    pose = await posePromise;
+    if (run !== liveRun) return;
+    pose.resetClock();
+    session.meta.delegate = pose.delegate;
   } catch (e) {
-    fail(e);
+    if (run === liveRun) fail(e);
   }
 }
 
@@ -271,6 +305,7 @@ async function openFile(file: File) {
   try {
     const pose = await getPose("heavy");
     pose.resetClock();
+    setStatus("Analysing · 0 %", "idle", "processing");
     const frames: PoseFrame[] = [];
     abort = new AbortController();
     const r = await processFile(
@@ -317,6 +352,7 @@ function saveSession() {
 
 function fail(e: unknown) {
   console.error(e);
+  void stopAll();
   app.error = String((e as Error)?.message ?? e);
   setStatus(`Error: ${app.error}`, "error", "error");
   setRunning(false);
