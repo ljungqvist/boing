@@ -49,8 +49,15 @@ Phones only allow the camera over HTTPS, so accept the certificate warning on th
 npm run build          # static site in dist/, open from any web server
 ```
 
-`.github/workflows/pages.yml` builds and publishes `dist/` on every push to `main`
-(one-time setup: repository Settings → Pages → Source: GitHub Actions).
+Two versions are published on GitHub Pages by `.github/workflows/pages.yml`:
+
+| Branch | Address | Purpose |
+|---|---|---|
+| `main` | https://ljungqvist.github.io/boing/ | stable |
+| `dev` | https://ljungqvist.github.io/boing/dev/ | testing |
+
+A push to either branch rebuilds and publishes both. A broken `dev` build never blocks
+`main`. Work goes to `dev` first and is merged into `main` when it's good.
 The pose models are downloaded from Google's MediaPipe model storage at runtime.
 
 ## Development

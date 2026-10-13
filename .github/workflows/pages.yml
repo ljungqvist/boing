@@ -1,10 +1,15 @@
-# Build the static web app and publish it on GitHub Pages.
-# One-time setup: repository Settings → Pages → Source: "GitHub Actions".
+# Publish two builds of the web app on one GitHub Pages site:
+#   main → https://ljungqvist.github.io/boing/       (stable)
+#   dev  → https://ljungqvist.github.io/boing/dev/   (testing)
+# A push to either branch rebuilds both, so neither address goes stale.
+# A broken dev build never blocks main: dev is then left out of that deployment.
+# One-time setup: Settings → Pages → Source: "GitHub Actions"; the github-pages
+# environment must allow deployments from both main and dev.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -16,24 +21,59 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
+
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      - name: Build main
+        working-directory: main
+        run: npm ci && npm run typecheck && npm test && npm run build
+
+      - name: Check out dev
+        id: checkout-dev
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: dev
+      - name: Build dev
+        id: build-dev
+        if: steps.checkout-dev.outcome == 'success'
+        continue-on-error: true
+        working-directory: dev
+        run: npm ci && npm run typecheck && npm test && npm run build
+
+      - name: Assemble site
+        run: |
+          mkdir site
+          cp -r main/dist/. site/
+          if [ "${{ steps.build-dev.outcome }}" = "success" ]; then
+            mkdir site/dev && cp -r dev/dist/. site/dev/
+          else
+            echo "::warning::dev build failed or missing; publishing main only"
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
+
+      # A push to dev should still go red when the dev build is broken.
+      - name: Fail if the pushed dev build is broken
+        if: github.ref == 'refs/heads/dev' && steps.build-dev.outcome != 'success'
+        run: exit 1
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
