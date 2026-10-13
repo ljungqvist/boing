@@ -7,6 +7,7 @@ export interface CameraSession {
   /** Frame rate the camera reports, if any. */
   reportedFps?: number;
   label: string;
+  stream: MediaStream;
 }
 
 /**
@@ -55,6 +56,7 @@ export async function startCamera(
     reportedFps: track.getSettings().frameRate,
     timing,
     label: track.label,
+    stream,
     stop() {
       running = false;
       stream.getTracks().forEach((t) => t.stop());

@@ -10,9 +10,9 @@ import { processFile } from "./file";
 import { withTimeout } from "./load";
 import { ICONS, renderIcons } from "./icons";
 import { Pose, type ModelKind } from "./pose";
+import { choosePiece, RollingRecorder } from "./recorder";
+import { AFTER, BEFORE, REJECT, Refiner, type RefineResult } from "./refiner";
 
-/** Flags that mean "this was not a jump", rather than "a jump with a caveat". */
-const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible"];
 const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "not-parabola": "no free-fall curve",
   "few-frames": "too short",
@@ -31,8 +31,24 @@ const MIN_FPS = 22;
 const FLASH_MS = 5000;
 /** Live sessions keep this much pose data for "Save session". */
 const SESSION_SECONDS = 180;
+/** Recorded piece length and stagger (seconds); jump windows up to PIECE − STAGGER fit in one piece. */
+const PIECE = 6;
+const STAGGER = 3;
+/** Debug: `?refine=off` measures from the live analysis only, as before continuous recording. */
+const REFINE = new URLSearchParams(location.search).get("refine") !== "off";
 
-interface ResultEntry {
+/** How a jump was measured. */
+interface Measurement {
+  /** Measured again from the recording, using every recorded frame. */
+  refined: boolean;
+  /** Refinement was tried and failed: the live result, from fewer frames. */
+  approximate: boolean;
+  /** Frames in the air in the live analysis, and in the refined one. */
+  framesLive: number;
+  framesRefined: number | null;
+}
+
+interface ResultEntry extends Measurement {
   hPrimary: number;
   hFlight: number;
   flight: number;
@@ -48,6 +64,8 @@ const app = {
   error: "",
   /** Recent analysed frames (live mode). */
   frames: [] as PoseFrame[],
+  /** How each live jump was measured (refinement diagnostics, also in "Save session"). */
+  measurements: [] as Record<string, unknown>[],
 };
 (window as unknown as { boing: typeof app }).boing = app;
 
@@ -90,10 +108,24 @@ let camera: CameraSession | null = null;
 let abort: AbortController | null = null;
 let flashTimer: number | undefined;
 /** Accepted jumps of this session, with the data needed for the detail view. */
-let jumps: { jump: Jump; signals: Signals; fps: number }[] = [];
+let jumps: { jump: Jump; signals: Signals; fps: number; how?: Measurement }[] = [];
 let ignored = 0;
 /** Pose data of the current/last live session, for "Save session". */
-let session: { frames: PoseFrame[]; width: number; height: number; meta: Record<string, unknown> } | null = null;
+let session: {
+  frames: PoseFrame[]; width: number; height: number; meta: Record<string, unknown>; jumps: Record<string, unknown>[];
+} | null = null;
+let recorder: RollingRecorder | null = null;
+/** Cancels refinements of the current results (new session or file). */
+let refineAbort = new AbortController();
+/** Live jumps waiting for their refined result. */
+let pending = 0;
+
+/** Decodes recorded pieces when WebCodecs can't (fallback). */
+const refineVideo = document.createElement("video");
+refineVideo.className = "offscreen";
+refineVideo.muted = true;
+refineVideo.playsInline = true;
+document.body.append(refineVideo);
 
 type Pill = "idle" | "ready" | "adjust" | "air" | "error";
 function setStatus(text: string, pill: Pill = "idle", state?: typeof app.state) {
@@ -112,6 +144,7 @@ async function stopAll() {
   liveRun++; // cancels a live start that is still loading
   abort?.abort();
   abort = null;
+  recorder?.stop(); // finished pieces stay available for jumps still being measured
   camera?.stop();
   camera = null;
   video.pause();
@@ -120,6 +153,10 @@ async function stopAll() {
 }
 
 function clearResults() {
+  refineAbort.abort();
+  refineAbort = new AbortController();
+  pending = 0;
+  recorder = null;
   app.results = [];
   jumps = [];
   ignored = 0;
@@ -143,9 +180,14 @@ function fitOverlay() {
 }
 window.addEventListener("resize", fitOverlay);
 
-function addResult(j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number }, live: boolean) {
+const LIVE_ONLY: Measurement = { refined: false, approximate: false, framesLive: 0, framesRefined: null };
+
+function addResult(
+  j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number }, live: boolean,
+  how: Measurement = { ...LIVE_ONLY, framesLive: j.airborneFrames },
+) {
   const accepted = !j.flags.some((f) => REJECT.includes(f));
-  app.results.push({ hPrimary: j.hPrimary, hFlight: j.hFlight, flight: j.tOn - j.tOff, fps, flags: j.flags, accepted });
+  app.results.push({ hPrimary: j.hPrimary, hFlight: j.hFlight, flight: j.tOn - j.tOff, fps, flags: j.flags, accepted, ...how });
   if (!accepted) {
     ignored++;
     ignoredEl.hidden = false;
@@ -156,12 +198,67 @@ function addResult(j: Jump, fps: number, frames: PoseFrame[], size: { width: num
     ignoredEl.querySelector("ul")!.prepend(item);
     return;
   }
-  jumps.push({ jump: j, signals: toSignals({ ...size, fps, frames }), fps });
+  jumps.push({ jump: j, signals: toSignals({ ...size, fps, frames }), fps, how });
   renderSession();
   if (live) {
-    showFlash(j.hPrimary);
+    showFlash(j.hPrimary, how.approximate);
     feedback.announce(j.hPrimary);
   }
+}
+
+/** Live jumps worth measuring again: accepted ones, and ones rejected only for having too few frames. */
+function refinable(j: Jump): boolean {
+  return j.flags.filter((f) => REJECT.includes(f)).every((f) => f === "few-frames");
+}
+
+/**
+ * Measure a live jump again from the recording: wait until a finished piece covers it,
+ * analyse every frame of that stretch, and show that result. Falls back to the live result.
+ */
+async function refineLive(
+  rec: RollingRecorder, refiner: Refiner,
+  j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number },
+) {
+  const signal = refineAbort.signal;
+  const log: Record<string, unknown> = {
+    tOff: j.tOff, hLive: j.hPrimary, hFlightLive: j.hFlight, framesLive: j.airborneFrames, fpsLive: fps, flagsLive: j.flags,
+  };
+  session?.jumps.push(log);
+  pending++;
+  showMeasuring();
+  let result: RefineResult;
+  const waitStart = performance.now();
+  let piece = choosePiece(rec.pieces(), j.tOff - BEFORE, j.tOn + AFTER);
+  while (!piece && !rec.error && performance.now() - waitStart < (PIECE + 1) * 1000 && !signal.aborted) {
+    await new Promise((r) => setTimeout(r, 250));
+    piece = choosePiece(rec.pieces(), j.tOff - BEFORE, j.tOn + AFTER);
+  }
+  log.waitMs = Math.round(performance.now() - waitStart);
+  if (signal.aborted) return;
+  if (!piece) result = { error: rec.error ? `recording: ${rec.error}` : "no-piece", ms: 0 };
+  else {
+    log.piece = { start: piece.start, end: piece.end, bytes: piece.blob?.size, type: piece.blob?.type };
+    result = await refiner.refine(j, piece, signal);
+  }
+  if (signal.aborted) return;
+  pending--;
+  log.ms = result.ms;
+  if ("jump" in result) {
+    const r = result.jump;
+    Object.assign(log, {
+      h: r.hPrimary, hFlight: r.hFlight, frames: r.airborneFrames, fps: result.fps, offset: result.offset, flags: r.flags,
+      decoder: result.decoder, analysed: result.frames.length,
+    });
+    addResult(r, result.fps, result.frames, result.size, true,
+      { refined: true, approximate: false, framesLive: j.airborneFrames, framesRefined: r.airborneFrames });
+    return;
+  }
+  Object.assign(log, { error: result.error, flags: result.flags });
+  console.warn("refinement failed, using the live result", result);
+  const accepted = !j.flags.some((f) => REJECT.includes(f));
+  addResult(j, fps, frames, size, true,
+    { refined: false, approximate: accepted, framesLive: j.airborneFrames, framesRefined: null });
+  if (!accepted && pending === 0) flash.hidden = true; // it was "Measuring…"
 }
 
 function renderSession() {
@@ -174,7 +271,7 @@ function renderSession() {
   hs.forEach((h, i) => {
     const chip = document.createElement("button");
     chip.className = "chip" + (h === best ? " best" : "") + (i === hs.length - 1 ? " latest" : "");
-    chip.textContent = h.toFixed(1);
+    chip.textContent = (jumps[i].how?.approximate ? "≈" : "") + h.toFixed(1);
     chip.addEventListener("click", () => showDetails(i));
     chipsEl.append(chip);
   });
@@ -182,8 +279,12 @@ function renderSession() {
 }
 
 function showDetails(i: number) {
-  const { jump: j, signals, fps } = jumps[i];
+  const { jump: j, signals, fps, how } = jumps[i];
   const notes = j.flags.map((f) => NOTE_TEXT[f]).filter(Boolean);
+  if (how?.approximate) notes.push("Measured from the live analysis only, with fewer frames; the result may be less accurate.");
+  const frames = how?.refined
+    ? `${how.framesRefined} (live analysis: ${how.framesLive})`
+    : `${j.airborneFrames}`;
   details.querySelector("h2")!.textContent = `Jump ${i + 1} of ${jumps.length}`;
   details.querySelector(".sheet-body")!.innerHTML = `
     <div class="detail-height">${(j.hPrimary * 100).toFixed(1)}<small> cm</small></div>
@@ -191,6 +292,7 @@ function showDetails(i: number) {
       <dt>Flight-time height</dt><dd>${(j.hFlight * 100).toFixed(1)} cm</dd>
       <dt>Time in the air</dt><dd>${((j.tOn - j.tOff) * 1000).toFixed(0)} ms</dd>
       <dt>Frame rate</dt><dd>${fps.toFixed(0)} fps</dd>
+      <dt>Frames in the air</dt><dd>${frames}</dd>
     </dl>
     ${notes.map((n) => `<p class="note">${n}</p>`).join("")}
     <canvas id="plot"></canvas>
@@ -202,14 +304,23 @@ function showDetails(i: number) {
 }
 
 /** The latest height in large type on top of the video, for a few seconds. */
-function showFlash(h: number) {
-  flash.innerHTML = `${(h * 100).toFixed(1)}<small>cm</small>`;
+function showFlash(h: number, approximate = false) {
+  flash.innerHTML = `${approximate ? "≈" : ""}${(h * 100).toFixed(1)}<small>cm</small>`;
+  flash.classList.remove("measuring");
   flash.hidden = false;
   flash.style.animation = "none";
   void flash.offsetWidth; // restart the pop-in animation
   flash.style.animation = "";
   clearTimeout(flashTimer);
   flashTimer = window.setTimeout(() => (flash.hidden = true), FLASH_MS);
+}
+
+/** After a landing, until the refined height is known. */
+function showMeasuring() {
+  clearTimeout(flashTimer);
+  flash.textContent = "Measuring…";
+  flash.classList.add("measuring");
+  flash.hidden = false;
 }
 
 /** Toes clearly above where they stood during the last two seconds. */
@@ -248,8 +359,24 @@ async function startLive() {
     app.frames = history;
     let fpsWindow: number[] = [];
     stage.classList.toggle("mirrored", facing === "user");
-    session = { frames: [], width: 0, height: 0, meta: { facing } };
+    session = { frames: [], width: 0, height: 0, meta: { facing }, jumps: [] };
+    app.measurements = session.jumps;
     const rec = session;
+    // Continuous recording, to measure each jump again from every recorded frame.
+    let recording: RollingRecorder | null = null;
+    // Refinement borrows the live pose instance; live analysis pauses meanwhile.
+    let refining = false;
+    const refiner = new Refiner(async () => {
+      if (!pose) throw new Error("pose model not loaded");
+      return pose;
+    }, refineVideo, 15_000, (busy) => {
+      refining = busy;
+      if (busy) return;
+      // Fresh frame-rate measurement after the pause, so it doesn't look like a slow phone.
+      fpsWindow = [];
+      poseSince = 0;
+    });
+    let lag = 0; // performance.now() minus frame time, seconds
 
     camera = await withTimeout(startCamera(video, facing, (t) => {
       if (run !== liveRun) return;
@@ -259,7 +386,13 @@ async function startLive() {
         setStatus(poseStep, "idle", "loading");
         return;
       }
+      if (refining) {
+        drawSkeleton(overlay, null, false);
+        setStatus("Measuring…", "idle", "live");
+        return;
+      }
       const lm = pose.detect(video, t * 1000);
+      lag = performance.now() / 1000 - t;
       const frame = { t, lm };
       rec.width = video.videoWidth;
       rec.height = video.videoHeight;
@@ -272,6 +405,9 @@ async function startLive() {
       const fps = fpsWindow.length;
       // After a short warm-up, switch to the lite model if this phone can't keep up.
       if (!poseSince) poseSince = t;
+      // Recording starts once the model has been running for a moment: starting it together
+      // with the model's first detections stalled the camera's frames for good (Chrome).
+      if (t - poseSince > 1) recording?.start();
       if (!pinned && pose.kind !== "lite" && !switching && t - poseSince > 3 && fps < MIN_FPS) {
         switching = true;
         localStorage.setItem("boing.model", "lite");
@@ -286,7 +422,10 @@ async function startLive() {
       }
 
       const size = { width: video.videoWidth, height: video.videoHeight };
-      for (const j of tracker.push(frame, size)) addResult(j, fpsWindow.length, [...history], size, true);
+      for (const j of tracker.push(frame, size)) {
+        if (recording && refinable(j)) void refineLive(recording, refiner, j, fps, [...history], size);
+        else addResult(j, fps, [...history], size, true);
+      }
 
       const inAir = airborne(history, lm);
       drawSkeleton(overlay, lm, inAir);
@@ -300,6 +439,15 @@ async function startLive() {
     }), 60_000, "Starting the camera (was the permission question answered?)");
     placeholder.hidden = true;
     void wakeLock.acquire();
+    if (REFINE && RollingRecorder.supported()) {
+      const cam = camera;
+      // Piece times on the frame timeline: capture times share performance.now()'s clock.
+      recording = recorder = new RollingRecorder(cam.stream, {
+        piece: PIECE, stagger: STAGGER,
+        clock: () => performance.now() / 1000 - (cam.timing.source === "captureTime" ? 0 : lag),
+      });
+    }
+    session.meta.recording = { type: recorder?.mimeType ?? null, enabled: REFINE };
     setStatus(poseStep, "idle", "loading");
 
     // A camera that starts but never delivers a picture would otherwise look like endless loading.
@@ -361,7 +509,7 @@ function saveSession() {
     setStatus("Nothing to save yet", "idle");
     return;
   }
-  const meta = { ...session.meta, userAgent: navigator.userAgent, timing: camera?.timing, savedAt: new Date().toISOString() };
+  const meta = { ...session.meta, recordingError: recorder?.error, userAgent: navigator.userAgent, timing: camera?.timing, savedAt: new Date().toISOString() };
   const fps = session.frames.length / Math.max(1e-3, session.frames[session.frames.length - 1].t - session.frames[0].t);
   const blob = new Blob([JSON.stringify({ ...session, fps, meta })], { type: "application/json" });
   const a = document.createElement("a");

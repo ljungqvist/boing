@@ -113,3 +113,29 @@
 - Running live pose + refinement pose at once may slow the live rate further. If so, pause live pose while a refinement runs (the preview keeps playing).
 - iPhone Safari records `video/mp4` with different timestamp behaviour; not testable here, so flag it to the user.
 - Memory: 4 pieces × 6 s × 4 Mbps ≈ 12 MB, fine.
+
+## Implementation notes (2026-10-14)
+
+Deviations from the design above, found while testing with the fake camera:
+
+- **Window and margins.** `[tOff − 1.0, tOn + 0.8]` plus 0.4 s margins is ≈ 3.1–3.2 s, more than
+  `PIECE − STAGGER = 3 s` guarantees. Used `[tOff − 0.8, tOn + 0.6]` (`BEFORE`/`AFTER` in
+  `refiner.ts`), margin 0.3 s, 0.25 s extra analysed on both sides, takeoff match ±0.5 s.
+  Measured live↔piece offsets: mostly within ±25 ms, worst seen 0.21 s.
+- **Decoding with WebCodecs, not `<video>` stepping.** Pausing a `<video>` in each frame callback
+  skips frames when the page is busy (39 of ~180 frames on a throttled page, 110 of ~145 with the
+  CPU delegate): exactly the slow-phone case. WebM pieces are now demuxed (`src/media/webm.ts`)
+  and decoded with `VideoDecoder` (`src/web/decode.ts`): every frame, with container timestamps,
+  and only the window is posed (earlier frames are just decoded). `<video>` stepping
+  (`processVideo`) remains the fallback (MP4/Safari, no WebCodecs).
+- **One pose instance, live paused while refining.** A second MediaPipe instance running (or
+  starting) next to the live one made Chrome's camera stop delivering frames for good.
+  The refiner borrows the live `Pose` (its clock is rebased so MediaPipe timestamps keep
+  increasing) and live analysis pauses meanwhile; status shows "Measuring…". Jumps during
+  that pause are not detected. Refinement takes ~3 s on a laptop GPU and ~11–13 s on the
+  slow-phone rig (60 fps fake camera, so twice the frames of a 30 fps phone).
+- **Recorder start.** Starting `MediaRecorder` together with the camera or the model's first
+  detections also stalled the camera; it now starts once the model has run for 1 s. A jump
+  within ~2 s of "Ready" therefore has no piece yet and is shown as "≈".
+- **Piece start time** is taken at `MediaRecorder.start()`, not `onstart` (late on a busy page).
+- Per-jump diagnostics are in `window.boing.measurements` and in "Save session" (`jumps`).

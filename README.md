@@ -23,8 +23,14 @@ How the jump is performed is up to the athlete and their coach.
 1. Put the phone (or laptop) 2–3 m away, so your whole body including the feet is in view.
    Lying on the floor tilted up works.
 2. Press **Start** (the round button). When the status turns green (**Ready**), jump with
-   hands on hips. The height appears on top of the video and is spoken out loud
-   (speaker icon to turn off). The camera switch button flips between front and back camera.
+   hands on hips. After the landing the video shows "Measuring…", then the height, which is
+   also spoken out loud (speaker icon to turn off). The camera switch button flips between
+   front and back camera.
+
+   While live, the app records the camera continuously (in overlapping 6-second pieces) and
+   measures each detected jump again from **every recorded frame**, so a slow phone gets as
+   many frames in the air as a fast one. A "≈" in front of a height means only the live
+   analysis could be used (fewer frames). Debug: `?refine=off` turns this off.
 3. **Film icon**: analyse a recording frame by frame. Most accurate with the phone's
    slow-motion mode (120/240 fps). Android slow-motion files are converted to real time
    automatically.
