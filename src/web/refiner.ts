@@ -1,6 +1,7 @@
 import { findJumps, type Jump, type JumpFlag } from "../analysis/jumps";
 import { toSignals } from "../analysis/signals";
 import type { PoseFrame } from "../analysis/types";
+import { decodeWebM } from "./decode";
 import { processVideo } from "./file";
 import type { Pose } from "./pose";
 import type { Piece } from "./recorder";
@@ -9,8 +10,10 @@ import type { Piece } from "./recorder";
 export const BEFORE = 0.8;
 /** … and after landing. Together with the margins this must stay below piece − stagger. */
 export const AFTER = 0.6;
-/** Extra seconds analysed on both sides, and the allowed takeoff mismatch: the live↔piece time mapping is approximate. */
-const SLACK = 0.5;
+/** The live↔piece time mapping is approximate (measured: within ~50 ms): extra seconds analysed on both sides … */
+const PAD = 0.25;
+/** … and the allowed takeoff mismatch between the live and the refined jump. */
+const MATCH = 0.5;
 
 export interface Refined {
   /** The jump on the piece's own timeline (seconds from the piece's start). */
@@ -22,6 +25,8 @@ export interface Refined {
   ms: number;
   /** Refined takeoff (mapped to live time) minus live takeoff, seconds. */
   offset: number;
+  /** How the piece was decoded: WebCodecs (every frame) or stepping a hidden video (fallback). */
+  decoder: "webcodecs" | "video";
 }
 export type RefineResult = Refined | { error: string; ms: number; flags?: JumpFlag[] };
 
@@ -29,7 +34,9 @@ export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible"
 
 /**
  * Re-analyses a live jump from a recorded piece, using every recorded frame.
- * Jobs run one at a time, on a hidden video element and their own pose instance.
+ * Jobs run one at a time. They borrow the live pose instance: two MediaPipe instances
+ * running side by side stalled the camera (Chrome), so live analysis pauses meanwhile
+ * (`onBusy`), and the pose clock is handed back afterwards.
  */
 export class Refiner {
   private queue: Promise<unknown> = Promise.resolve();
@@ -38,6 +45,8 @@ export class Refiner {
     private readonly getPose: () => Promise<Pose>,
     private readonly video: HTMLVideoElement,
     private readonly timeoutMs = 15_000,
+    /** Called when a job starts and ends (e.g. to pause the live analysis meanwhile). */
+    private readonly onBusy: (busy: boolean) => void = () => {},
   ) {}
 
   refine(live: Jump, piece: Piece, signal?: AbortSignal): Promise<RefineResult> {
@@ -47,6 +56,15 @@ export class Refiner {
   }
 
   private async run(live: Jump, piece: Piece, outer?: AbortSignal): Promise<RefineResult> {
+    this.onBusy(true);
+    try {
+      return await this.job(live, piece, outer);
+    } finally {
+      this.onBusy(false);
+    }
+  }
+
+  private async job(live: Jump, piece: Piece, outer?: AbortSignal): Promise<RefineResult> {
     const t0 = performance.now();
     const ms = () => Math.round(performance.now() - t0);
     if (outer?.aborted) return { error: "cancelled", ms: 0 };
@@ -56,35 +74,48 @@ export class Refiner {
     outer?.addEventListener("abort", onAbort);
     const timer = setTimeout(() => abort.abort(), this.timeoutMs);
     const frames: PoseFrame[] = [];
+    let pose: Pose | null = null;
     try {
-      const pose = await this.getPose();
-      pose.resetClock();
-      const from = live.tOff - BEFORE - SLACK - piece.start;
-      const to = live.tOn + AFTER + SLACK - piece.start;
-      await processVideo(piece.blob, this.video, (t) => {
-        frames.push({ t, lm: pose.detect(this.video, t * 1000) });
-      }, () => {}, abort.signal, { from, to });
-      const size = { width: this.video.videoWidth, height: this.video.videoHeight };
+      const p = (pose = await this.getPose());
+      p.resetClock();
+      const from = live.tOff - BEFORE - PAD - piece.start;
+      const to = live.tOn + AFTER + PAD - piece.start;
+      let decoder: Refined["decoder"] = "webcodecs";
+      let size = { width: 0, height: 0 };
+      const decoded = await decodeWebM(piece.blob, (frame, t) => {
+        frames.push({ t, lm: p.detect(frame, t * 1000) });
+      }, abort.signal, { from, to });
+      if (decoded) size = { width: decoded.width, height: decoded.height };
+      else {
+        decoder = "video";
+        await processVideo(piece.blob, this.video, (t) => {
+          frames.push({ t, lm: p.detect(this.video, t * 1000) });
+        }, () => {}, abort.signal, { from, to });
+        size = { width: this.video.videoWidth, height: this.video.videoHeight };
+      }
       if (frames.length < 10) return { error: "no-frames", ms: ms() };
       const fps = (frames.length - 1) / (frames[frames.length - 1].t - frames[0].t);
       const target = live.tOff - piece.start;
       const near = findJumps(toSignals({ ...size, fps, frames }))
-        .filter((j) => Math.abs(j.tOff - target) <= SLACK)
+        .filter((j) => Math.abs(j.tOff - target) <= MATCH)
         .sort((a, b) => Math.abs(a.tOff - target) - Math.abs(b.tOff - target));
       const jump = near[0];
       if (!jump) return { error: "no-match", ms: ms() };
       if (jump.flags.some((f) => REJECT.includes(f))) return { error: "rejected", ms: ms(), flags: jump.flags };
-      return { jump, frames, size, fps, ms: ms(), offset: jump.tOff - target };
+      return { jump, frames, size, fps, ms: ms(), offset: jump.tOff - target, decoder };
     } catch (e) {
-      const name = (e as Error)?.name;
-      if (name === "AbortError") return { error: outer?.aborted ? "cancelled" : "timeout", ms: ms() };
+      if (outer?.aborted) return { error: "cancelled", ms: ms() };
+      if (abort.signal.aborted) return { error: "timeout", ms: ms() };
       console.warn("refinement failed", e);
       return { error: String((e as Error)?.message ?? e), ms: ms() };
     } finally {
+      pose?.resetClock(); // the live timeline continues next
       clearTimeout(timer);
       outer?.removeEventListener("abort", onAbort);
-      this.video.removeAttribute("src");
-      this.video.load(); // release the decoder
+      if (this.video.src) {
+        this.video.removeAttribute("src");
+        this.video.load(); // release the decoder
+      }
     }
   }
 }

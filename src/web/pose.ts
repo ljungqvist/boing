@@ -57,7 +57,7 @@ export class Pose {
   }
 
   /** Landmarks of the current frame; `tMs` is the frame's own timestamp. */
-  detect(source: HTMLVideoElement, tMs: number): Landmark[] | null {
+  detect(source: TexImageSource, tMs: number): Landmark[] | null {
     if (this.rebase) {
       // A gap, so the tracker doesn't smooth across two timelines.
       this.offsetMs = this.lastMs < 0 ? 0 : Math.max(0, this.lastMs + REBASE_GAP_MS - tMs);
