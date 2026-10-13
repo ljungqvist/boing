@@ -7,9 +7,15 @@ export type ModelKind = "lite" | "full" | "heavy";
 const modelUrl = (k: ModelKind) =>
   `https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${k}/float16/latest/pose_landmarker_${k}.task`;
 
+const REBASE_GAP_MS = 1000;
+
 /** MediaPipe pose landmarker in VIDEO mode; one person. */
 export class Pose {
+  /** Last timestamp handed to MediaPipe, which needs them strictly increasing. */
   private lastMs = -1;
+  /** Added to the caller's timestamps, so a new timeline continues after the old one. */
+  private offsetMs = 0;
+  private rebase = true;
 
   private constructor(private readonly landmarker: PoseLandmarker, readonly delegate: "GPU" | "CPU", readonly kind: ModelKind) {}
 
@@ -52,16 +58,21 @@ export class Pose {
 
   /** Landmarks of the current frame; `tMs` is the frame's own timestamp. */
   detect(source: HTMLVideoElement, tMs: number): Landmark[] | null {
-    const ms = Math.max(Math.round(tMs), this.lastMs + 1); // must strictly increase
+    if (this.rebase) {
+      // A gap, so the tracker doesn't smooth across two timelines.
+      this.offsetMs = this.lastMs < 0 ? 0 : Math.max(0, this.lastMs + REBASE_GAP_MS - tMs);
+      this.rebase = false;
+    }
+    const ms = Math.max(Math.round(tMs + this.offsetMs), this.lastMs + 1); // must strictly increase
     this.lastMs = ms;
     const r = this.landmarker.detectForVideo(source, ms);
     const p = r.landmarks[0];
     return p ? p.map((q) => [q.x, q.y, q.z, q.visibility ?? 0] as Landmark) : null;
   }
 
-  /** Start a new timeline (e.g. a new video file). */
+  /** Start a new timeline (e.g. a new video file); it may start earlier than the last one. */
   resetClock(): void {
-    this.lastMs = -1;
+    this.rebase = true;
   }
 
   close(): void {
