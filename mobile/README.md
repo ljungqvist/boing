@@ -29,9 +29,33 @@ For development with hot reload: `npx expo run:android` (debug build + Metro).
 
 ## iOS
 
-Not built yet: this needs Xcode (or a cloud build, e.g. `eas build -p ios`, which needs an Expo account
-and an Apple developer account). Then `npx expo prebuild --platform ios && npx expo run:ios --device`.
-The Swift code in `modules/react-native-boing-pose/ios` has not been compiled yet.
+Needs iPadOS/iOS 16.4 or later (Expo SDK 57). Built and tested in CI on a macOS runner
+(`.github/workflows/ios.yml`, on every push that touches `mobile/`): prebuild, `pod install`, a
+simulator build, then the app analyses two generated test videos in an iPad simulator and must
+measure their known 30 cm jump within ±1.5 cm (stored upright and stored sideways with a rotation,
+like an iPhone portrait video). The run also uploads an unsigned device build
+(`Boing-unsigned.ipa`) that can be signed and installed with a free Apple ID (Sideloadly, AltStore).
+
+On a Mac with Xcode:
+
+```
+npm install
+npx expo prebuild --platform ios
+npx expo run:ios --device          # or: cd ios && pod install && open Boing.xcworkspace
+scripts/make-test-jump.sh videos   # the CI test videos (needs ffmpeg)
+scripts/analyze-on-simulator.sh videos/jump-upright.mp4   # app installed on a booted simulator
+```
+
+`analyze-on-simulator.sh` restarts the app with the launch argument `-boingAnalyze <url>` (links
+would wait for an "Open in Boing?" prompt) and reads the result from the app's
+`Documents/boing-file-result.json` (iOS release builds don't log). The app's status lines go to
+`Documents/boing-test-log.txt` meanwhile.
+
+- The simulator runs MediaPipe on the CPU: its GPU path aborts there. Devices try the GPU first.
+- Not yet tried on a device: the live camera (preview, skeleton overlay, 120/240 fps formats) and
+  the GPU path.
+- iPhone slow-motion videos: files store no capture rate (Android does), so a slow-motion export
+  is measured as real time unless its frame timing shows it.
 
 ## Frame rates
 
