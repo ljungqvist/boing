@@ -3,7 +3,6 @@ import { StyleSheet } from "react-native";
 import { boingPose, type PoseDetector } from "react-native-boing-pose";
 import {
   Camera,
-  type CameraRef,
   type CameraSessionConfig,
   type Frame,
   useCameraDevice,
@@ -15,7 +14,7 @@ import { bestFps } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
 import { fromDetect, toFrames } from "../logic/pose";
 import { deleteQuietly, modelPath, toPath } from "../native/models";
-import { PoseFeed, Skeleton, type ViewPoint } from "./Skeleton";
+import { PoseFeed, Skeleton } from "./Skeleton";
 
 export interface CameraInfo {
   /** Frame rate the camera session runs at. */
@@ -118,39 +117,17 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   }, [controller, controllerRef]);
 
   const feed = useMemo(() => new PoseFeed(), []);
-  const camera = useRef<CameraRef>(null);
-  /** `a`: the detector's result; `cam`: the landmarks in camera coordinates (x, y pairs). */
-  const onPose = useCallback((a: number[], cam: number[]) => {
+  const onPose = useCallback((a: number[]) => {
     const { frame, size } = fromDetect(a);
     if (!controller) return;
     controller.push(frame, size);
-    // Preview coordinates via VisionCamera's own conversion: mirroring, crop and rotation included.
-    let points: ViewPoint[] | null = null;
-    const preview = camera.current;
-    if (frame.lm && preview && cam.length === frame.lm.length * 2) {
-      try {
-        points = frame.lm.map((l, i) => {
-          const p = preview.convertCameraPointToViewPoint({ x: cam[2 * i], y: cam[2 * i + 1] });
-          return { x: p.x, y: p.y, v: l[3] };
-        });
-      } catch {
-        points = null; // preview not ready yet
-      }
-    }
-    feed.emit({ points, air: controller.airborne });
+    feed.emit({ lm: frame.lm, size, air: controller.airborne });
   }, [controller, feed]);
 
   const onFrame = useCallback((frame: Frame) => {
     "worklet";
     try {
-      if (!detector) return;
-      const a = detector.detect(frame);
-      const cam: number[] = [];
-      for (let i = 3; i + 3 < a.length; i += 4) {
-        const p = frame.convertFramePointToCameraPoint({ x: a[i] * frame.width, y: a[i + 1] * frame.height });
-        cam.push(p.x, p.y);
-      }
-      scheduleOnRN(onPose, a, cam);
+      if (detector) scheduleOnRN(onPose, detector.detect(frame));
     } finally {
       frame.dispose();
     }
@@ -175,7 +152,6 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   return (
     <>
       <Camera
-        ref={camera}
         style={StyleSheet.absoluteFill}
         isActive
         device={device}
@@ -185,7 +161,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         onError={onError}
         resizeMode="cover"
       />
-      <Skeleton feed={feed} />
+      <Skeleton feed={feed} mirrored={facing === "front"} />
     </>
   );
 }
