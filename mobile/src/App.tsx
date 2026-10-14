@@ -13,7 +13,7 @@ import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
 import { announce } from "./native/feedback";
-import { modelPath, toPath } from "./native/models";
+import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
 import { JumpDetails, Row, Sheet } from "./ui/Sheets";
@@ -47,6 +47,8 @@ function Main() {
   const [details, setDetails] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [info, setInfo] = useState<CameraInfo | null>(null);
+  /** How each live jump was measured (newest first), for the menu's diagnostics. */
+  const [logs, setLogs] = useState<Record<string, unknown>[]>([]);
   const [session, setSession] = useState(0); // remounts the camera on Start/flip
   const controller = useRef<LiveController | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -63,6 +65,7 @@ function Main() {
   const clear = useCallback(() => {
     setResults([]);
     setIgnored([]);
+    setLogs([]);
     setFlash(null);
     setDetails(null);
   }, []);
@@ -89,7 +92,10 @@ function Main() {
       console.log(`BOING_LIVE ${JSON.stringify({ h: m.jump.hPrimary, hFlight: m.jump.hFlight, fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags })}`);
       addResult(m, true);
     },
-    log: (e) => console.log(`BOING_LOG ${JSON.stringify(e)}`),
+    log: (e) => {
+      console.log(`BOING_LOG ${JSON.stringify(e)}`);
+      setLogs((xs) => [e, ...xs].slice(0, 20));
+    },
   };
 
   const stopLive = useCallback(() => {
@@ -164,13 +170,7 @@ function Main() {
     const res = await DocumentPicker.getDocumentAsync({ type: "video/*", copyToCacheDirectory: true });
     if (res.canceled || !res.assets[0]) return;
     const uri = res.assets[0].uri;
-    await analyzeFile(uri, () => {
-      try {
-        new File(uri).delete(); // the picker's copy
-      } catch {
-        // already gone
-      }
-    });
+    await analyzeFile(uri, () => deleteQuietly(uri)); // the picker's copy
   }, [mode, stopLive, analyzeFile]);
 
   // Testing hook: boing://analyze?url=http://localhost:8765/x.mp4 downloads a video and analyses it
@@ -185,7 +185,7 @@ function Main() {
         setStatus({ text: "Downloading video…", tone: "idle" });
         const dest = new File(Paths.cache, `download-${Date.now()}.mp4`);
         await File.downloadFileAsync(target, dest);
-        await analyzeFile(dest.uri, () => dest.delete());
+        await analyzeFile(dest.uri, () => deleteQuietly(dest.uri));
       } catch (e) {
         console.log(`BOING_FILE ${JSON.stringify({ uri: target, error: String((e as Error)?.message ?? e) })}`);
         fail(e);
@@ -311,6 +311,14 @@ function Main() {
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
           {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
+          {logs.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
+              {logs.map((e, i) => (
+                <Text key={i} style={s.diag}>{describeLog(e)}</Text>
+              ))}
+            </>
+          )}
           {ignored.length > 0 && (
             <>
               <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
@@ -330,6 +338,18 @@ function Main() {
       )}
     </View>
   );
+}
+
+/** One line per live jump: how it was measured. */
+function describeLog(e: Record<string, unknown>): string {
+  const n = (k: string, d = 1) => (typeof e[k] === "number" ? (e[k] as number).toFixed(d) : "–");
+  const cmOf = (k: string) => (typeof e[k] === "number" ? ((e[k] as number) * 100).toFixed(1) : "–");
+  if (e.tOff === undefined) return String(e.error ?? JSON.stringify(e));
+  const live = `live ${cmOf("hLive")} cm (${e.framesLive ?? "–"} fr)`;
+  if (e.h !== undefined && !e.error) {
+    return `t ${n("tOff")} s · ${live} → ${cmOf("h")} cm (${e.frames} fr, ${n("fps", 0)} fps, ${n("ms", 0)} ms, offset ${n("offset", 2)} s)`;
+  }
+  return `t ${n("tOff")} s · ${live} · not re-measured: ${e.error ?? e.reason ?? "?"}${e.ms !== undefined ? ` (${n("ms", 0)} ms)` : ""}`;
 }
 
 const pillStyle = (t: Tone) =>
@@ -386,4 +406,5 @@ const s = StyleSheet.create({
   shutterText: { color: "#1f0d00", fontWeight: "800", fontSize: 16 },
   sectionTitle: { color: C.text, fontWeight: "600", marginTop: 16, marginBottom: 4 },
   hint: { color: C.muted, fontSize: 13, marginTop: 12, lineHeight: 19 },
+  diag: { color: C.muted, fontSize: 12, marginTop: 6, fontVariant: ["tabular-nums"] },
 });

@@ -39,3 +39,13 @@ async function download(kind: ModelKind, onStep: (text: string) => void): Promis
 
 /** File-system path (no file:// prefix) for native code. */
 export const toPath = (uri: string) => decodeURIComponent(uri.replace(/^file:\/\//, ""));
+
+/** Deletes a file if it's there; never throws (cleanup must not hide the real error). */
+export function deleteQuietly(uri: string): void {
+  try {
+    const f = new File(uri.startsWith("file://") ? uri : `file://${uri}`);
+    if (f.exists) f.delete();
+  } catch {
+    // already gone or not ours
+  }
+}

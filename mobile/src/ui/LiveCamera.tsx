@@ -1,4 +1,3 @@
-import { File } from "expo-file-system";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { boingPose, type PoseDetector } from "react-native-boing-pose";
@@ -14,7 +13,7 @@ import { scheduleOnRN } from "react-native-worklets";
 import { bestFps } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
 import { fromDetect, toFrames } from "../logic/pose";
-import { modelPath, toPath } from "../native/models";
+import { deleteQuietly, modelPath, toPath } from "../native/models";
 import { PoseFeed, Skeleton } from "./Skeleton";
 
 export interface CameraInfo {
@@ -97,11 +96,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           return { frames: toFrames(r), size: { width: r.width, height: r.height } };
         },
         deleteClip(path) {
-          try {
-            new File(`file://${path}`).delete();
-          } catch {
-            // already gone
-          }
+          deleteQuietly(path);
         },
       },
       {
