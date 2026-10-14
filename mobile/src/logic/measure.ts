@@ -5,7 +5,13 @@ import type { PoseFrame } from "../../../src/analysis/types";
 import type { Size } from "./pose";
 
 /** Flags that mean "not a jump we can measure": such movements are listed as ignored. */
-export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent"];
+export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent", "poor-fit"];
+
+/**
+ * Rejections about the movement itself rather than the recording: a live measurement of the same
+ * movement is no better, so it isn't shown in place of a re-measurement rejected for these.
+ */
+export const MOVEMENT_REJECT: JumpFlag[] = ["not-parabola", "out-of-view", "inconsistent", "poor-fit"];
 
 export const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "not-parabola": "no free-fall curve",
@@ -13,6 +19,7 @@ export const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "g-implausible": "speed doesn't match gravity",
   "out-of-view": "not fully in view",
   "inconsistent": "inconsistent flight",
+  "poor-fit": "unsteady body points",
 };
 
 /**
@@ -25,8 +32,12 @@ export const NOTE_TEXT: Partial<Record<JumpFlag, string>> = {
 
 export const accepted = (j: Jump) => !j.flags.some((f) => REJECT.includes(f));
 
-/** Live jumps worth measuring again: accepted ones, and ones rejected only for having too few frames. */
-export const refinable = (j: Jump) => j.flags.filter((f) => REJECT.includes(f)).every((f) => f === "few-frames");
+/**
+ * Live jumps worth measuring again: accepted ones, and ones rejected only for what more frames can
+ * fix (too few frames, noisy points or edges at the live frame rate).
+ */
+const REFINABLE: JumpFlag[] = ["few-frames", "inconsistent", "poor-fit"];
+export const refinable = (j: Jump) => j.flags.filter((f) => REJECT.includes(f)).every((f) => REFINABLE.includes(f));
 
 /** Seconds analysed again around a live jump: before takeoff (floor level, countermovement) … */
 export const BEFORE = 0.8;

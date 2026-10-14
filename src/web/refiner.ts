@@ -32,7 +32,9 @@ export interface Refined {
 }
 export type RefineResult = Refined | { error: string; ms: number; flags?: JumpFlag[] };
 
-export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent"];
+export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent", "poor-fit"];
+/** Rejections about the movement itself: the live result of the same movement isn't shown instead. */
+export const MOVEMENT_REJECT: JumpFlag[] = ["not-parabola", "out-of-view", "inconsistent", "poor-fit"];
 
 /**
  * Re-analyses a live jump from a recorded piece, using every recorded frame.

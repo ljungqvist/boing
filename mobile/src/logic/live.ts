@@ -1,7 +1,7 @@
 import type { Jump } from "../../../src/analysis/jumps";
 import { JumpTracker } from "../../../src/analysis/tracker";
 import type { PoseFrame } from "../../../src/analysis/types";
-import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, PAD, REJECT, refinable } from "./measure";
+import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
 import type { Size } from "./pose";
 import { liveStatus, type Status } from "./status";
 import type { Measured } from "./video";
@@ -205,8 +205,11 @@ export class LiveController {
   private async measure(c: OpenClip, path: string | null) {
     const job = this.queue.then(async () => {
       for (const j of c.jumps) {
-        await this.refine(j, c, path);
+        const { measured, log } = await this.refine(j, c, path);
+        // Not pending any more when the result arrives (the app clears "Measuring…" at zero).
         this.pending--;
+        this.events.log?.(log);
+        this.events.result(measured);
       }
       if (path) this.deps.deleteClip(path);
     });
@@ -214,7 +217,8 @@ export class LiveController {
     await job;
   }
 
-  private async refine(live: Jump, c: OpenClip, path: string | null) {
+  /** Measures one live jump again from its clip; falls back to the live measurement. */
+  private async refine(live: Jump, c: OpenClip, path: string | null): Promise<{ measured: Measured; log: Record<string, unknown> }> {
     const size = { width: 0, height: 0 };
     const log: Record<string, unknown> = {
       tOff: live.tOff, hLive: live.hPrimary, framesLive: live.airborneFrames, gLive: live.gImplied, flagsLive: live.flags,
@@ -223,8 +227,7 @@ export class LiveController {
     const fallback = () => {
       const m = this.liveMeasurement(live, size);
       m.approximate = accepted(live);
-      this.events.log?.(log);
-      this.events.result(m);
+      return { measured: m, log };
     };
     if (!path) {
       log.error = "no-recording";
@@ -252,16 +255,19 @@ export class LiveController {
         h: jump.hPrimary, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
         offset: jump.tOff - live.tOff, flags: jump.flags,
       });
+      const measured: Measured = { jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames };
       if (jump.flags.some((f) => REJECT.includes(f))) {
         log.error = "rejected";
+        // The movement itself can't be measured (moved, left the picture, unsteady points): the live
+        // result of the same movement isn't shown instead. A doubtful recording (time base) falls back.
+        if (jump.flags.some((f) => MOVEMENT_REJECT.includes(f))) return { measured, log };
         return fallback();
       }
-      this.events.log?.(log);
-      this.events.result({ jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames });
+      return { measured, log };
     } catch (e) {
       log.ms = Date.now() - t0;
       log.error = String((e as Error)?.message ?? e);
-      fallback();
+      return fallback();
     }
   }
 }
