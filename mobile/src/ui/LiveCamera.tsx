@@ -183,7 +183,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         constraints={constraints}
         onSessionConfigSelected={onConfig}
         onError={onError}
-        resizeMode="contain"
+        resizeMode="cover"
       />
       <Skeleton feed={feed} />
     </>
