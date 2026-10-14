@@ -9,7 +9,11 @@ import type { Measured } from "./video";
  * A fake camera: the "recording" is the scene at 240 fps; the live analysis only sees
  * 15 fps of it. Clip files are named by their start time on the frame clock.
  */
-function setup(opts: { recordFails?: boolean; analyzeFails?: boolean; startLag?: number; liveFps?: number } = {}) {
+function setup(opts: {
+  recordFails?: boolean; analyzeFails?: boolean; startLag?: number; liveFps?: number;
+  /** The recording's clock runs this much slower around each takeoff (a wrong time base). */
+  clipStretch?: number;
+} = {}) {
   const jumps = [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
   const scene = syntheticFrames({ fps: 240, duration: 14, jumps, seed: 5 });
   const size = { width: scene.width, height: scene.height };
@@ -29,10 +33,12 @@ function setup(opts: { recordFails?: boolean; analyzeFails?: boolean; startLag?:
       if (opts.analyzeFails) throw new Error("decoder failed");
       analysed.push({ from, to });
       const start = Number(path.split("@")[1]);
+      const k = opts.clipStretch ?? 1;
+      const takeoff = jumps.map((j) => j.tTakeoff).find((t) => t - start > from && t - start < to) ?? 0;
       const frames: PoseFrame[] = scene.frames
         .filter((f) => f.t - start >= from && f.t - start <= to)
-        .map((f) => ({ t: f.t - start, lm: f.lm }));
-      return { frames, size };
+        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: f.lm }));
+      return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 } };
     },
     deleteClip(path) {
       const c = clips.find((x) => `clip@${x.start}` === path);
@@ -40,11 +46,13 @@ function setup(opts: { recordFails?: boolean; analyzeFails?: boolean; startLag?:
     },
   };
   const results: Measured[] = [];
+  const logs: Record<string, unknown>[] = [];
   let measuring = 0;
   const live = new LiveController(deps, {
     status: () => {},
     measuring: () => measuring++,
     result: (m) => results.push(m),
+    log: (e) => logs.push(e),
   });
   async function run() {
     let last = -Infinity;
@@ -58,7 +66,7 @@ function setup(opts: { recordFails?: boolean; analyzeFails?: boolean; startLag?:
     }
     await live.stop();
   }
-  return { live, run, results, clips, analysed, measuring: () => measuring };
+  return { live, run, results, clips, analysed, logs, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
@@ -97,6 +105,24 @@ describe("LiveController", () => {
     const ok = s.results.filter((m) => accepted(m.jump));
     expect(ok).toHaveLength(2);
     expect(ok.every((m) => !m.refined && m.approximate)).toBe(true);
+  });
+
+  it("logs why a re-measured jump was rejected, with the recorded file's facts", async () => {
+    // A recording whose clock runs 1.6× slow: its jumps imply g ≈ 3.8 m/s² and are rejected.
+    const s = setup({ clipStretch: 1.6, liveFps: 30 });
+    await s.run();
+    const ok = s.results.filter((m) => accepted(m.jump));
+    expect(ok).toHaveLength(2);
+    expect(ok.every((m) => !m.refined && m.approximate)).toBe(true);
+    const rejected = s.logs.filter((e) => e.error === "rejected");
+    expect(rejected).toHaveLength(2);
+    for (const e of rejected) {
+      expect(e.flags).toContain("g-implausible");
+      expect(e.g).toBeLessThan(4);
+      expect(e.video).toMatchObject({ rotation: 270 });
+      expect(e.withPose).toBe(e.analysed);
+      expect(e.gLive).toBeGreaterThan(8);
+    }
   });
 
   it("works without recording (live results only)", async () => {
