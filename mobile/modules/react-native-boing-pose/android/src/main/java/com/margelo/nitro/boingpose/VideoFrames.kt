@@ -5,9 +5,11 @@ import android.graphics.ImageFormat
 import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.util.Log
 
 /** Index and format of the first video track. */
 private fun MediaExtractor.selectVideoTrack(): MediaFormat {
@@ -90,9 +92,8 @@ fun decodeFrames(
     val mime = format.getString(MediaFormat.KEY_MIME)!!
     if (fromUs > 0) extractor.seekTo(fromUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
     format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-    val c = MediaCodec.createDecoderByType(mime)
+    val c = openDecoder(mime, format)
     codec = c
-    c.configure(format, null, null, 0)
     c.start()
     val info = MediaCodec.BufferInfo()
     var inputDone = false
@@ -140,6 +141,30 @@ fun decodeFrames(
     codec?.release()
     extractor.release()
   }
+}
+
+/**
+ * A configured decoder for the format: the first one that accepts it, hardware decoders before
+ * software ones. Budget chips reject some phone videos (e.g. 1080p at 60 fps), Android's software
+ * decoders take them (slower).
+ */
+private fun openDecoder(mime: String, format: MediaFormat): MediaCodec {
+  val infos = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+    .filter { !it.isEncoder && it.supportedTypes.any { t -> t.equals(mime, ignoreCase = true) } }
+    .sortedBy { if (it.name.startsWith("c2.android.") || it.name.startsWith("OMX.google.")) 1 else 0 }
+  var last: Throwable? = null
+  for (info in infos) {
+    val codec = MediaCodec.createByCodecName(info.name)
+    try {
+      codec.configure(format, null, null, 0)
+      return codec
+    } catch (e: Throwable) {
+      Log.w("BoingPose", "Decoder ${info.name} can't take this video", e)
+      codec.release()
+      last = e
+    }
+  }
+  throw Error("No decoder on this device can play this video ($mime): ${last?.message ?: "none found"}")
 }
 
 /** Longest side of the bitmaps handed to the pose model (it works on 256×256 internally). */

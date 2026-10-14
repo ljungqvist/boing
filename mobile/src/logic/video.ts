@@ -81,7 +81,9 @@ export async function measureVideo(
     const r = await analyze({ from: w.from / scale, to: w.to / scale, minInterval: 0 }, (p) =>
       onProgress(0.5 + (0.5 * (done + p * (w.to - w.from))) / total));
     done += w.to - w.from;
-    const s = timeScaleOf(file.captureFps, fileFps, r.frames.map((f) => f.t));
+    // The whole file decides about slow motion: one window of a variable-frame-rate file can run
+    // below its peak rate and look slowed down.
+    const s = scale;
     const frames = r.frames.map((f) => ({ t: f.t * s, lm: f.lm }));
     const wFps = frameRate(frames);
     fps = Math.max(fps, wFps);

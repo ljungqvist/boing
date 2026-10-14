@@ -54,6 +54,21 @@ describe("measureVideo", () => {
     expect(r.jumps.filter((m) => accepted(m.jump)).map((m) => +m.jump.hFlight.toFixed(2))).toEqual([0.25]);
   });
 
+  it("measures every frame of a variable-frame-rate file that slows down around the jump", async () => {
+    // Up to 60 fps (metadata: capture 60), but only 30 fps from 1.5 s before to 1.5 s after the jump.
+    const f = fakeFile({ fps: 60, duration: 10, seed: 6, jumps: [{ tTakeoff: 5, height: 0.25 }] });
+    const all = f.analyze;
+    const analyze: Analyze = async (o, p) => {
+      const r = await all(o, p);
+      return { ...r, frames: r.frames.filter((fr, i) => fr.t < 3.5 || fr.t > 6.5 || i % 2 === 0) };
+    };
+    const r = await measureVideo({ duration: f.duration, fps: 45, peakFps: 60, captureFps: 60 }, analyze);
+    const ok = r.jumps.filter((m) => accepted(m.jump));
+    expect(ok).toHaveLength(1);
+    expect(ok[0].approximate).toBe(false);
+    expect(ok[0].jump.hFlight).toBeCloseTo(0.25, 1);
+  });
+
   it("converts Android slow-motion files to real time", async () => {
     // 240 fps captured, stored at 30 fps: 8× slower on the file's timeline.
     const f = fakeFile({ fps: 30, duration: 40, slowMotion: 8, seed: 3, jumps: [{ tTakeoff: 2, height: 0.2 }] });
