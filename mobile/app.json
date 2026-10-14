@@ -18,8 +18,12 @@
     },
     "android": {
       "package": "info.ljungqvist.boing",
-      "permissions": ["android.permission.CAMERA"],
-      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#0e0e10",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -36,7 +40,8 @@
             "minSdkVersion": 28
           }
         }
-      ]
+      ],
+      "./plugins/withLocalhostCleartext"
     ]
   }
 }

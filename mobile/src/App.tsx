@@ -1,5 +1,5 @@
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
+import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -171,16 +171,28 @@ function Main() {
     });
   }, [mode, stopLive, analyzeFile]);
 
-  // Testing hook: boing://analyze?path=/sdcard/Android/data/info.ljungqvist.boing/files/x.mp4
+  // Testing hook: boing://analyze?url=http://localhost:8765/x.mp4 downloads a video and analyses it
+  // (scripts/analyze-on-device.sh); boing://analyze?path=… analyses a file the app can read.
   useEffect(() => {
-    const handle = (url: string | null) => {
-      const m = url?.match(/^boing:\/\/analyze\?path=(.+)$/);
-      if (m) void analyzeFile(decodeURIComponent(m[1]));
+    const handle = async (url: string | null) => {
+      const m = url?.match(/^boing:\/\/analyze\?(path|url)=(.+)$/);
+      if (!m) return;
+      const target = decodeURIComponent(m[2]);
+      if (m[1] === "path") return analyzeFile(target);
+      try {
+        setStatus({ text: "Downloading video…", tone: "idle" });
+        const dest = new File(Paths.cache, `download-${Date.now()}.mp4`);
+        await File.downloadFileAsync(target, dest);
+        await analyzeFile(dest.uri, () => dest.delete());
+      } catch (e) {
+        console.log(`BOING_FILE ${JSON.stringify({ uri: target, error: String((e as Error)?.message ?? e) })}`);
+        fail(e);
+      }
     };
     void Linking.getInitialURL().then(handle);
-    const sub = Linking.addEventListener("url", (e) => handle(e.url));
+    const sub = Linking.addEventListener("url", (e) => void handle(e.url));
     return () => sub.remove();
-  }, [analyzeFile]);
+  }, [analyzeFile, fail]);
 
   const heights = results.map((m) => m.jump.hPrimary);
   const sum = summarize(heights);
