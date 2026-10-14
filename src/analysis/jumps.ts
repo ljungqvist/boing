@@ -49,7 +49,7 @@ const MAX_HEIGHT_RATIO = 2;
 /**
  * Takeoff→apex may exceed the flight-time height only by measurement noise: more would mean landing
  * higher than the takeoff, which a jump can't do (the body is never more stretched than at takeoff).
- * Moving towards a floor-level camera in the air shifts the hips' apex late and reads 30–55 cm for a
+ * Moving towards a floor-level camera in the air shifts the hips' apex late and reads 28–71 cm for a
  * 16 cm jump; normal jumps stay below ≈ 1.15 at 30 fps (docs/evaluation/2026-10-15-accuracy-review.md).
  */
 const MAX_RISE_OVER_FLIGHT = 1.2;
