@@ -34,7 +34,7 @@ export interface ExpOptions {
   rejectFloorShift?: number; // reject when the floor before and after differ by more than this fraction of body
   rejectScale?: number; // reject when the hip+shoulder width at landing differs from takeoff by more than this fraction
   /** Edge time: quadratic toe root (current) or local fit near the edge. */
-  edges?: "toeParabola" | "local" | "perFoot" | "hipLeg" | "knee";
+  edges?: "toeParabola" | "local" | "perFoot" | "hipLeg" | "knee" | "legPeak" | "legPeakAvg";
   /** knee: half-width of the data window around the run edge (s). */
   kneeWindow?: number;
   /** hipLeg: the edge frames are the first/last with the toes this far above the floor (fraction of body). */
@@ -187,6 +187,21 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
       const kb = fitHinge(near(s.t[last]), s.t[last] - 0.15, s.t[last] + 0.1, -1);
       if (Number.isFinite(ka)) tOff = ka;
       if (Number.isFinite(kb)) tOn = kb;
+    }
+    if (opts.edges === "legPeak" || opts.edges === "legPeakAvg") {
+      // Takeoff = when the legs (hip − toe) are longest: they extend in the push-off and are pulled up
+      // right after the toes leave (−11 ± 7 ms against the hand-marked takeoff at 240 fps).
+      const leg = (i: number) => s.hip[i] - s.toe[i];
+      let best = -1;
+      for (let i = 0; i < n; i++) {
+        if (Math.abs(s.t[i] - tOff) > 0.1 || !Number.isFinite(leg(i))) continue;
+        if (best < 0 || leg(i) > leg(best)) best = i;
+      }
+      if (best > 0 && best < n - 1 && Number.isFinite(leg(best - 1)) && Number.isFinite(leg(best + 1))) {
+        const q = fitQuadratic([s.t[best - 1], s.t[best], s.t[best + 1]], [leg(best - 1), leg(best), leg(best + 1)]);
+        const peak = q.a < 0 ? Math.min(Math.max(q.vertex, s.t[best - 1]), s.t[best + 1]) : s.t[best];
+        tOff = opts.edges === "legPeak" ? peak : (tOff + peak) / 2;
+      }
     }
     if (opts.edges === "hipLeg") {
       // The first and last frames clearly in the air; from there the toe is moved back to the floor

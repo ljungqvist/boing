@@ -157,6 +157,11 @@ low. On the athlete video the toe points *lag* instead (VIDEO-mode smoothing, do
 offset depends on the person, the footwear and the camera; one sign doesn't fit all. Not changed. Needs
 reference jumps in the user's own setup.
 
+Also tried: takeoff = when the legs (hip − toe) are longest (−11 ± 7 ms at 240 fps). On the 240 fps video
+it removes most of the offset (heavy at 60 fps: +1.7 ± 0.8 cm), but on every other video it reads 5–25 cm
+low (side views, shoes): the leg-length peak depends on the camera angle. A warning against tuning the
+edges on this one video.
+
 ### F5 Smaller things
 
 - **Landing level**: the landing crossing uses the floor level *before* the jump; after drift or with a
@@ -190,9 +195,9 @@ can't be told apart from a one-frame takeoff error.
   `out-of-view`, `not-parabola`, `poor-fit`) is listed as ignored instead of showing the live height.
   A doubtful recording (`g-implausible`, `few-frames`) still falls back. Not pending when the result arrives.
 - `mobile/src/ui/LiveCamera.tsx`: re-measure with the heavy model (downloaded in the background; full
-  until it's there), timeout 60 s, the model is logged in the diagnostics. **Not type-checked** (no
-  `mobile/node_modules` on this machine) and not run on a phone. On the Galaxy Tab A8 heavy took
-  ≈ 0.24 s per frame, i.e. ≈ 20 s per jump at 30 fps; a flagship should take a few seconds.
+  until it's there), timeout 60 s, the model is logged in the diagnostics. Type-checks, but not run on a
+  phone. On the Galaxy Tab A8 heavy took ≈ 0.24 s per frame, i.e. ≈ 20 s per jump at 30 fps; a flagship
+  should take a few seconds.
 
 Unit tests (91) and e2e tests (9) pass.
 
