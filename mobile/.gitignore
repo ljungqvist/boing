@@ -39,3 +39,12 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# iOS CI and test outputs
+/build
+/videos
+/ipa
+*.ipa
+result-*.json
+screenshot-*.png
+build-*.log

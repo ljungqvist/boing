@@ -156,20 +156,20 @@ function Main() {
         (p) => me === run.current && setStatus({ text: `Analysing · ${Math.round(p * 100)} %`, tone: "idle" }),
       );
       if (me !== run.current) return;
-      console.log(`BOING_FILE ${JSON.stringify({
+      reportFile({
         uri, ms: Date.now() - t0, info: v, timeScale: r.timeScale, fps: r.fps,
         jumps: r.jumps.map((m) => ({
           tOff: m.jump.tOff, tOn: m.jump.tOn, h: m.jump.hPrimary, hFlight: m.jump.hFlight, frames: m.jump.airborneFrames,
           fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags,
         })),
-      })}`);
+      });
       for (const m of r.jumps) addResult(m, false);
       const ok = r.jumps.filter((m) => accepted(m.jump));
       const how = r.timeScale < 1 ? ` · slow motion, captured at ${Math.round(v.captureFps)} fps` : ` · ${Math.round(r.fps)} fps`;
       setStatus({ text: `${ok.length} jump${ok.length === 1 ? "" : "s"} found${how}`, tone: ok.length ? "ready" : "idle" });
       if (ok.length) showFlash({ text: cm(Math.max(...ok.map((m) => m.jump.hPrimary))), measuring: false });
     } catch (e) {
-      console.log(`BOING_FILE ${JSON.stringify({ uri, error: String((e as Error)?.message ?? e) })}`);
+      reportFile({ uri, error: String((e as Error)?.message ?? e) });
       if (me === run.current) fail(e);
     } finally {
       if (me === run.current) setMode("idle");
@@ -199,7 +199,7 @@ function Main() {
         await File.downloadFileAsync(target, dest);
         await analyzeFile(dest.uri, () => deleteQuietly(dest.uri));
       } catch (e) {
-        console.log(`BOING_FILE ${JSON.stringify({ uri: target, error: String((e as Error)?.message ?? e) })}`);
+        reportFile({ uri: target, error: String((e as Error)?.message ?? e) });
         fail(e);
       }
     };
@@ -370,10 +370,26 @@ function Main() {
   );
 }
 
+/**
+ * The result of a file analysis, for the test scripts: logged (Android logcat) and written to
+ * Documents/boing-file-result.json (iOS release builds don't log; the simulator's app container
+ * is readable from the Mac).
+ */
+function reportFile(r: Record<string, unknown>) {
+  const line = JSON.stringify(r);
+  console.log(`BOING_FILE ${line}`);
+  try {
+    new File(Paths.document, "boing-file-result.json").write(line);
+  } catch {
+    // only for tests
+  }
+}
+
 /** Shares the diagnostics as text (e.g. to a chat or e-mail). */
 async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[]) {
   const c = Platform.constants as Record<string, unknown>;
-  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || Platform.OS;
+  // Android: brand and model; iOS only tells phone or tablet ("pad").
+  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || [Platform.OS, c.interfaceIdiom].filter(Boolean).join(" ");
   const context = {
     time: new Date().toISOString(),
     device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,

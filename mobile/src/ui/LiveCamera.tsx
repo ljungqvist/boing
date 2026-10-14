@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { boingPose, type PoseDetector } from "react-native-boing-pose";
 import {
   Camera,
@@ -161,7 +161,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         onError={onError}
         resizeMode="cover"
       />
-      <Skeleton feed={feed} mirrored={facing === "front"} />
+      {/* The front camera's preview is mirrored. Its analysed frames are too on iOS (VisionCamera
+          mirrors the rotated buffers), not on Android, where the skeleton must be flipped. */}
+      <Skeleton feed={feed} mirrored={facing === "front" && Platform.OS === "android"} />
     </>
   );
 }

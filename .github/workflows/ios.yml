@@ -1,0 +1,138 @@
+# Builds the native app for iOS on a macOS runner and tests it in the iOS simulator:
+# the app analyses two generated test videos (a known 30 cm jump, stored upright and sideways)
+# with the real decoder + MediaPipe path and must measure 30 ± 1.5 cm.
+# Also builds an unsigned device app (Boing-unsigned.ipa artifact) for sideloading.
+name: iOS
+
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - "src/analysis/**"
+      - "src/media/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  videos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make test videos
+        run: |
+          which ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
+          mobile/scripts/make-test-jump.sh videos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-videos
+          path: videos/jump-*.mp4
+
+  build:
+    needs: videos
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Tools
+        run: |
+          xcodebuild -version
+          pod --version
+          xcrun simctl list runtimes
+
+      - name: Install
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate the iOS project
+        working-directory: mobile
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Pods
+        working-directory: mobile/ios
+        run: pod install
+
+      - name: Build for the simulator
+        working-directory: mobile/ios
+        run: |
+          xcodebuild -workspace Boing.xcworkspace -scheme Boing -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath ../build/sim CODE_SIGNING_ALLOWED=NO build > ../build-sim.log 2>&1 \
+          || { grep -E "error:|Error:" -A4 ../build-sim.log | head -150; tail -40 ../build-sim.log; exit 1; }
+          grep -E "warning:.*(boing-pose|BoingPose)" ../build-sim.log | sort -u | head -50 || true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-videos
+          path: mobile/videos
+
+      - name: Test in the simulator
+        working-directory: mobile
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 -E "iPad Air" | grep -oE "[0-9A-F-]{36}" || true)
+          [[ -n $UDID ]] || UDID=$(xcrun simctl list devices available | grep -m1 -E "iPad|iPhone" | grep -oE "[0-9A-F-]{36}")
+          xcrun simctl list devices available | grep "$UDID"
+          echo "SIM=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/sim/Build/Products/Release-iphonesimulator/Boing.app
+          xcrun simctl launch "$UDID" info.ljungqvist.boing
+          sleep 5
+          xcrun simctl io "$UDID" screenshot screenshot-start.png
+          for v in upright rotated; do
+            echo "::group::jump-$v.mp4"
+            SIM=$UDID scripts/analyze-on-simulator.sh videos/jump-$v.mp4 900 | tee result-$v.json
+            echo "::endgroup::"
+          done
+          xcrun simctl io "$UDID" screenshot screenshot-result.png
+          node scripts/check-test-jump.mjs result-upright.json
+          node scripts/check-test-jump.mjs result-rotated.json
+
+      - name: Simulator logs
+        if: failure()
+        working-directory: mobile
+        run: |
+          [[ -n ${SIM:-} ]] || exit 0
+          xcrun simctl io "$SIM" screenshot screenshot-failure.png || true
+          xcrun simctl spawn "$SIM" log show --last 15m --style compact \
+            --predicate 'process == "Boing" OR eventMessage CONTAINS "BoingPose"' | tail -200 || true
+          ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i boing && \
+            head -120 ~/Library/Logs/DiagnosticReports/*Boing* || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulator-results
+          path: |
+            mobile/screenshot-*.png
+            mobile/result-*.json
+            mobile/build-sim.log
+          if-no-files-found: ignore
+
+      - name: Build for devices (unsigned)
+        working-directory: mobile/ios
+        run: |
+          xcodebuild -workspace Boing.xcworkspace -scheme Boing -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath ../build/device CODE_SIGNING_ALLOWED=NO build > ../build-device.log 2>&1 \
+          || { grep -E "error:|Error:" -A4 ../build-device.log | head -150; tail -40 ../build-device.log; exit 1; }
+          cd ..
+          mkdir -p ipa/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/Boing.app ipa/Payload/
+          (cd ipa && zip -qr ../Boing-unsigned.ipa Payload)
+          ls -lh Boing-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Boing-unsigned-ipa
+          path: mobile/Boing-unsigned.ipa
