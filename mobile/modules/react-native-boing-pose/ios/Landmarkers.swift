@@ -50,8 +50,15 @@ final class VideoLandmarker {
     guard FileManager.default.fileExists(atPath: path) else {
       throw boingError("Pose model not found: \(path)")
     }
+    #if targetEnvironment(simulator)
+    // The simulator's Metal can't wrap frames as textures: MediaPipe's GPU path aborts there
+    // (copyCVMetalTextureWithGpuBuffer), which no fallback can catch.
+    let gpu = false
+    #else
+    let gpu = preferGpu
+    #endif
     do {
-      return try VideoLandmarker(path: path, preferGpu: preferGpu)
+      return try VideoLandmarker(path: path, preferGpu: gpu)
     } catch {
       throw boingError("Could not start the pose model: \(error.localizedDescription)")
     }
