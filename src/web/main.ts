@@ -11,7 +11,7 @@ import { withTimeout } from "./load";
 import { ICONS, renderIcons } from "./icons";
 import { Pose, type ModelKind } from "./pose";
 import { choosePiece, RollingRecorder } from "./recorder";
-import { AFTER, BEFORE, REJECT, Refiner, type RefineResult } from "./refiner";
+import { AFTER, BEFORE, MOVEMENT_REJECT, REJECT, Refiner, type RefineResult } from "./refiner";
 
 const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "not-parabola": "no free-fall curve",
@@ -19,6 +19,7 @@ const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "g-implausible": "speed doesn't match gravity",
   "out-of-view": "not fully in view",
   "inconsistent": "inconsistent flight",
+  "poor-fit": "unsteady body points",
 };
 /**
  * Notes shown with a result. Only about the setup, never about how to jump:
@@ -208,9 +209,13 @@ function addResult(
   }
 }
 
-/** Live jumps worth measuring again: accepted ones, and ones rejected only for having too few frames. */
+/**
+ * Live jumps worth measuring again: accepted ones, and ones rejected only for what more frames can
+ * fix (too few frames, noisy points or edges at the live frame rate).
+ */
+const REFINABLE: JumpFlag[] = ["few-frames", "inconsistent", "poor-fit"];
 function refinable(j: Jump): boolean {
-  return j.flags.filter((f) => REJECT.includes(f)).every((f) => f === "few-frames");
+  return j.flags.filter((f) => REJECT.includes(f)).every((f) => REFINABLE.includes(f));
 }
 
 /**
@@ -258,6 +263,12 @@ async function refineLive(
     return;
   }
   Object.assign(log, { error: result.error, flags: result.flags });
+  if (result.flags?.some((f) => MOVEMENT_REJECT.includes(f))) {
+    // The movement itself can't be measured: listed as ignored, the live height isn't shown instead.
+    addResult({ ...j, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames });
+    if (pending === 0) flash.hidden = true; // it was "Measuring…"
+    return;
+  }
   console.warn("refinement failed, using the live result", result);
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   addResult(j, fps, frames, size, true,
