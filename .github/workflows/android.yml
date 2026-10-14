@@ -1,0 +1,60 @@
+# Build the Android app and attach the APK to the workflow run:
+#   push to main → artifact "boing-main-apk"
+#   push to dev  → artifact "boing-dev-apk"
+# Download it from the run's page (Actions → run → Artifacts; needs a GitHub login).
+# The APK is the Expo template's release build, signed with the debug key: it installs
+# on a phone but isn't a store/production build. "Run workflow" builds the selected branch.
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - mobile/**
+      - src/**
+      - .github/workflows/android.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate the android/ project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boing-${{ github.ref_name }}-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
