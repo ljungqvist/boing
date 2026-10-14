@@ -19,17 +19,22 @@ SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT
 sleep 1
 
-RESULT="$(xcrun simctl get_app_container "$SIM" "$APP" data)/Documents/boing-file-result.json"
-rm -f "$RESULT"
+DOCS="$(xcrun simctl get_app_container "$SIM" "$APP" data)/Documents"
+RESULT="$DOCS/boing-file-result.json"
+LOG="$DOCS/boing-test-log.txt" # the app's status lines while testing
+rm -f "$RESULT" "$LOG"
 xcrun simctl openurl "$SIM" "boing://analyze?url=http://localhost:$PORT/$NAME"
 
 start=$(date +%s)
 until [[ -s $RESULT ]]; do
   if (( $(date +%s) - start > TIMEOUT )); then
-    echo "timeout after $TIMEOUT s" >&2
+    echo "timeout after $TIMEOUT s; app status lines:" >&2
+    cat "$LOG" >&2 2>/dev/null || echo "(none: the link never reached the app)" >&2
+    xcrun simctl spawn "$SIM" launchctl list 2>/dev/null | grep -i "$APP" >&2 || echo "(the app is not running)" >&2
     exit 1
   fi
   sleep 3
 done
+cat "$LOG" >&2 2>/dev/null || true
 cat "$RESULT"
 echo

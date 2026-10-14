@@ -89,9 +89,10 @@ jobs:
           xcrun simctl launch "$UDID" info.ljungqvist.boing
           sleep 5
           xcrun simctl io "$UDID" screenshot screenshot-start.png
+          echo "Screen text:"; swift scripts/ocr.swift screenshot-start.png || true
           for v in upright rotated; do
             echo "::group::jump-$v.mp4"
-            SIM=$UDID scripts/analyze-on-simulator.sh videos/jump-$v.mp4 900 | tee result-$v.json
+            SIM=$UDID scripts/analyze-on-simulator.sh videos/jump-$v.mp4 420 | tee result-$v.json
             echo "::endgroup::"
           done
           xcrun simctl io "$UDID" screenshot screenshot-result.png
@@ -104,8 +105,9 @@ jobs:
         run: |
           [[ -n ${SIM:-} ]] || exit 0
           xcrun simctl io "$SIM" screenshot screenshot-failure.png || true
-          xcrun simctl spawn "$SIM" log show --last 15m --style compact \
-            --predicate 'process == "Boing" OR eventMessage CONTAINS "BoingPose"' | tail -200 || true
+          echo "Screen text:"; swift scripts/ocr.swift screenshot-failure.png || true
+          xcrun simctl spawn "$SIM" log show --last 20m --style compact --info --debug \
+            --predicate 'processImagePath CONTAINS "Boing" OR eventMessage CONTAINS "BoingPose"' | tail -200 || true
           ls ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i boing && \
             head -120 ~/Library/Logs/DiagnosticReports/*Boing* || true
 
