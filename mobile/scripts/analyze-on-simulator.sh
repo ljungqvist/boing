@@ -1,8 +1,10 @@
 #!/bin/bash
 # Analyse a video file with the Boing app installed on a booted iOS simulator, and print the app's
 # result (JSON). The video is served over HTTP from this Mac (the simulator shares its localhost);
-# the app downloads it and writes the result to its Documents/boing-file-result.json (iOS release
-# builds don't log). The pose models download on first use.
+# the app is (re)started with the launch argument `-boingAnalyze <url>` (a boing:// link would wait
+# for an "Open in Boing?" prompt), downloads the video and writes the result to its
+# Documents/boing-file-result.json (iOS release builds don't log). The pose models download on
+# first use.
 #
 #   scripts/analyze-on-simulator.sh <video.mp4> [timeout seconds]
 set -euo pipefail
@@ -23,11 +25,11 @@ DOCS="$(xcrun simctl get_app_container "$SIM" "$APP" data)/Documents"
 RESULT="$DOCS/boing-file-result.json"
 LOG="$DOCS/boing-test-log.txt" # the app's status lines while testing
 rm -f "$RESULT" "$LOG"
-xcrun simctl openurl "$SIM" "boing://analyze?url=http://localhost:$PORT/$NAME"
+xcrun simctl terminate "$SIM" "$APP" > /dev/null 2>&1 || true
+xcrun simctl launch "$SIM" "$APP" -boingAnalyze "http://localhost:$PORT/$NAME" > /dev/null
 sleep 15
 if [[ ! -s $LOG ]]; then
-  # Usually iOS asking "Open in Boing?": approve the scheme before booting (see .github/workflows/ios.yml).
-  echo "the link didn't reach the app; screen text:" >&2
+  echo "the app didn't start the analysis; screen text:" >&2
   SHOT=$(mktemp -t boing).png
   xcrun simctl io "$SIM" screenshot "$SHOT" > /dev/null 2>&1
   swift "$(dirname "$0")/ocr.swift" "$SHOT" >&2 || true

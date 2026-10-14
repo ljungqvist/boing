@@ -3,7 +3,7 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, View } from "react-native";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
@@ -192,6 +192,8 @@ function Main() {
 
   // Testing hook: boing://analyze?url=http://localhost:8765/x.mp4 downloads a video and analyses it
   // (scripts/analyze-on-device.sh); boing://analyze?path=… analyses a file the app can read.
+  // iOS simulator: the launch argument `-boingAnalyze <url or path>` does the same
+  // (scripts/analyze-on-simulator.sh), as links there wait for an "Open in Boing?" prompt.
   useEffect(() => {
     const handle = async (url: string | null) => {
       const m = url?.match(/^boing:\/\/analyze\?(path|url)=(.+)$/);
@@ -211,6 +213,8 @@ function Main() {
       }
     };
     void Linking.getInitialURL().then(handle);
+    const arg = Platform.OS === "ios" ? (Settings.get("boingAnalyze") as string | undefined) : undefined;
+    if (arg) void handle(`boing://analyze?${arg.includes("://") ? "url" : "path"}=${encodeURIComponent(arg)}`);
     const sub = Linking.addEventListener("url", (e) => void handle(e.url));
     return () => sub.remove();
   }, [analyzeFile, fail]);
