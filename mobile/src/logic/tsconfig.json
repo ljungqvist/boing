@@ -1,0 +1,12 @@
+{
+  "//": "Pure TypeScript shared with the repo-root tests (Vitest): no Expo or React Native here, so the web app's checks work without mobile/node_modules.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["."]
+}
