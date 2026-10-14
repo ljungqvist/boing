@@ -78,7 +78,10 @@ func rotated(_ src: CVPixelBuffer, degrees: Int) throws -> CVPixelBuffer {
   let w = CVPixelBufferGetWidth(src), h = CVPixelBufferGetHeight(src)
   let (dw, dh) = d == 180 ? (w, h) : (h, w)
   var out: CVPixelBuffer?
-  let attrs = [kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any]()] as CFDictionary
+  let attrs = [
+    kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+    kCVPixelBufferMetalCompatibilityKey as String: true,
+  ] as CFDictionary
   guard CVPixelBufferCreate(nil, dw, dh, kCVPixelFormatType_32BGRA, attrs, &out) == kCVReturnSuccess,
         let dst = out else {
     throw boingError("Cannot allocate a \(dw)×\(dh) frame")

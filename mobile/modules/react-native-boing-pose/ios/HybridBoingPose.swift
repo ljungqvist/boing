@@ -26,8 +26,12 @@ class HybridBoingPose: HybridBoingPoseSpec {
       let landmarker = try VideoLandmarker.create(modelPath: options.modelPath, preferGpu: options.preferGpu)
       let rotation = Int(rotationDegrees(track.preferredTransform))
       let reader = try AVAssetReader(asset: asset)
+      // MediaPipe's GPU path wraps the frames in Metal textures: they must be IOSurface-backed and
+      // Metal-compatible, else it aborts (not a catchable error).
       let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
         kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        kCVPixelBufferMetalCompatibilityKey as String: true,
+        kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
       ])
       output.alwaysCopiesSampleData = false
       reader.add(output)
