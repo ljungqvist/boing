@@ -67,6 +67,11 @@ function Main() {
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const run = useRef(0); // cancels a file analysis when something else starts
+  /** Set by the testing hook: status lines then also go to a file (see `reportFile`). */
+  const testing = useRef(false);
+  useEffect(() => {
+    if (testing.current) appendTestLog(status.text);
+  }, [status]);
 
   const showFlash = useCallback((f: Flash, ms = FLASH_MS) => {
     clearTimeout(flashTimer.current);
@@ -192,6 +197,8 @@ function Main() {
       const m = url?.match(/^boing:\/\/analyze\?(path|url)=(.+)$/);
       if (!m) return;
       const target = decodeURIComponent(m[2]);
+      testing.current = true;
+      appendTestLog(`open ${url}`);
       if (m[1] === "path") return analyzeFile(target);
       try {
         setStatus({ text: "Downloading video…", tone: "idle" });
@@ -380,6 +387,17 @@ function reportFile(r: Record<string, unknown>) {
   console.log(`BOING_FILE ${line}`);
   try {
     new File(Paths.document, "boing-file-result.json").write(line);
+  } catch {
+    // only for tests
+  }
+}
+
+/** Appends a line to Documents/boing-test-log.txt (testing hook only). */
+function appendTestLog(text: string) {
+  try {
+    const f = new File(Paths.document, "boing-test-log.txt");
+    if (!f.exists) f.create();
+    f.write(`${new Date().toISOString()} ${text}\n`, { append: true });
   } catch {
     // only for tests
   }
