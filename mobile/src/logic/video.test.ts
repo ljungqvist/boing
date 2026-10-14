@@ -6,15 +6,15 @@ import { measureVideo, type Analyze } from "./video";
 /** A fake decoder over synthetic frames (file timeline), recording each call. */
 function fakeFile(o: Parameters<typeof syntheticFrames>[0]) {
   const v = syntheticFrames(o);
-  const calls: { from: number; to: number; minInterval: number; n: number }[] = [];
-  const analyze: Analyze = async ({ from, to, minInterval }, onProgress) => {
+  const calls: { from: number; to: number; minInterval: number; n: number; purpose: string }[] = [];
+  const analyze: Analyze = async ({ from, to, minInterval, purpose }, onProgress) => {
     let last = -Infinity;
     const frames = v.frames.filter((f) => {
       if (f.t < from || f.t > to || f.t - last < minInterval) return false;
       last = f.t;
       return true;
     });
-    calls.push({ from, to, minInterval, n: frames.length });
+    calls.push({ from, to, minInterval, n: frames.length, purpose });
     onProgress(1);
     return { frames, size: { width: v.width, height: v.height } };
   };
@@ -27,6 +27,7 @@ describe("measureVideo", () => {
     const f = fakeFile({ fps: 30, duration: 6, jumps: [{ tTakeoff: 2.5, height: 0.3 }], seed: 1 });
     const r = await measureVideo({ duration: f.duration, fps: f.fps, captureFps: 0 }, f.analyze);
     expect(f.calls).toHaveLength(1);
+    expect(f.calls[0].purpose).toBe("measure");
     expect(r.jumps).toHaveLength(1);
     expect(r.jumps[0].jump.hFlight).toBeCloseTo(0.3, 1);
     expect(r.jumps[0].refined).toBe(true);
@@ -41,6 +42,8 @@ describe("measureVideo", () => {
     const r = await measureVideo({ duration: f.duration, fps: f.fps, captureFps: 0 }, f.analyze, (p) => progress.push(p));
     expect(f.calls[0].n).toBeLessThan(400); // ~30 fps over 10 s
     expect(f.calls.slice(1).every((c) => c.minInterval === 0)).toBe(true);
+    // A lighter model may locate the jumps; the measurement uses the full one.
+    expect(f.calls.map((c) => c.purpose)).toEqual(["find", "measure", "measure"]);
     expect(r.jumps.filter((m) => accepted(m.jump)).map((m) => +m.jump.hFlight.toFixed(2))).toEqual([0.25, 0.35]);
     expect(r.jumps.every((m) => m.refined && m.fps > 200)).toBe(true);
     expect(progress[progress.length - 1]).toBe(1);

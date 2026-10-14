@@ -20,7 +20,8 @@ export interface Measured {
 
 /** Pose of the frames of a video file between `from` and `to` (file seconds). */
 export type Analyze = (
-  opts: { from: number; to: number; minInterval: number },
+  /** `find`: only to locate jumps (a lighter model will do); `measure`: the final measurement. */
+  opts: { from: number; to: number; minInterval: number; purpose: "find" | "measure" },
   onProgress: (fraction: number) => void,
 ) => Promise<{ frames: PoseFrame[]; size: Size }>;
 
@@ -57,7 +58,7 @@ export async function measureVideo(
   const realFps = fileFps / scale;
   const twoPass = realFps > 35;
   const first = await analyze(
-    { from: 0, to: file.duration, minInterval: twoPass ? FIRST_PASS_INTERVAL / scale * 0.98 : 0 },
+    { from: 0, to: file.duration, minInterval: twoPass ? FIRST_PASS_INTERVAL / scale * 0.98 : 0, purpose: twoPass ? "find" : "measure" },
     (p) => onProgress(twoPass ? p / 2 : p),
   );
   // One pass: the frame times show whether the file is slow motion (Android metadata alone can't).
@@ -78,7 +79,7 @@ export async function measureVideo(
   const dense: Measured[] = [];
   let fps = 0;
   for (const w of windows) {
-    const r = await analyze({ from: w.from / scale, to: w.to / scale, minInterval: 0 }, (p) =>
+    const r = await analyze({ from: w.from / scale, to: w.to / scale, minInterval: 0, purpose: "measure" }, (p) =>
       onProgress(0.5 + (0.5 * (done + p * (w.to - w.from))) / total));
     done += w.to - w.from;
     // The whole file decides about slow motion: one window of a variable-frame-rate file can run

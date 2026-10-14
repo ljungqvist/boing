@@ -126,13 +126,15 @@ function Main() {
     setMode("file");
     setStatus({ text: "Loading…", tone: "idle" });
     try {
-      const model = await modelPath("heavy", (text) => me === run.current && setStatus({ text, tone: "idle" }));
+      const step = (text: string) => me === run.current && setStatus({ text, tone: "idle" });
+      const model = await modelPath("heavy", step);
+      const findModel = await modelPath("full", step);
       const fileUri = uri.startsWith("file://") ? uri : `file://${uri}`;
       const v = boingPose.videoInfo(toPath(fileUri));
       const t0 = Date.now();
       const r = await measureVideo(
         { duration: v.duration, fps: v.fps, peakFps: v.peakFps, captureFps: v.captureFps },
-        nativeAnalyzer(fileUri, model),
+        nativeAnalyzer(fileUri, model, findModel),
         (p) => me === run.current && setStatus({ text: `Analysing · ${Math.round(p * 100)} %`, tone: "idle" }),
       );
       if (me !== run.current) return;
