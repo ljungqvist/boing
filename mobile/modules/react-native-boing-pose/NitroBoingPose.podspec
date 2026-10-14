@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.license      = package["license"]
   s.authors      = package["author"]
 
-  s.platforms    = { :ios => 15.5 }
+  s.platforms    = { :ios => 16.4 }
   s.source       = { :git => "https://github.com/ljungqvist/boing.git", :tag => "#{s.version}" }
 
   s.source_files = [
@@ -25,7 +25,7 @@ Pod::Spec.new do |s|
   load 'nitrogen/generated/ios/NitroBoingPose+autolinking.rb'
   add_nitrogen_files(s)
 
-  s.frameworks = ["AVFoundation", "CoreMedia", "CoreVideo"]
+  s.frameworks = ["Accelerate", "AVFoundation", "CoreMedia", "CoreVideo"]
   s.dependency 'MediaPipeTasksVision', '1.0.0'
   s.dependency 'VisionCamera'
   s.dependency 'React-jsi'
