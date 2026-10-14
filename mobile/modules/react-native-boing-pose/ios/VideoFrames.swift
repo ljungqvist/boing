@@ -43,7 +43,11 @@ func readVideoInfo(_ path: String) throws -> VideoInfo {
   let count = times.count
   let span = count > 1 ? times[count - 1] - times[0] : 0
   let fps = span > 0 ? Double(count - 1) / span : Double(track.nominalFrameRate)
-  let gaps = (1..<max(1, count)).map { times[$0] - times[$0 - 1] }.filter { $0 > 0 }.sorted()
+  var gaps: [Double] = []
+  for i in 1..<max(1, count) where times[i] > times[i - 1] {
+    gaps.append(times[i] - times[i - 1])
+  }
+  gaps.sort()
   let peakFps = gaps.isEmpty ? fps : 1 / gaps[gaps.count / 20]
   let rotation = rotationDegrees(track.preferredTransform)
   let sideways = Int(rotation) % 180 != 0

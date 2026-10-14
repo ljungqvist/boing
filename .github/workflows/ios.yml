@@ -67,7 +67,7 @@ jobs:
         run: |
           xcodebuild -workspace Boing.xcworkspace -scheme Boing -configuration Release \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath ../build/sim CODE_SIGNING_ALLOWED=NO build > ../build-sim.log 2>&1 \
+            -derivedDataPath ../build/sim ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build > ../build-sim.log 2>&1 \
           || { grep -E "error:|Error:" -A4 ../build-sim.log | head -150; tail -40 ../build-sim.log; exit 1; }
           grep -E "warning:.*(boing-pose|BoingPose)" ../build-sim.log | sort -u | head -50 || true
 
