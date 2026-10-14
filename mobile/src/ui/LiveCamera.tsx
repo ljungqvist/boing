@@ -93,7 +93,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             { modelPath: toPath(model.current!), from, to, minInterval: 0, preferGpu: true },
             () => {},
           );
-          return { frames: toFrames(r), size: { width: r.width, height: r.height } };
+          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: clipFacts(path) };
         },
         deleteClip(path) {
           deleteQuietly(path);
@@ -164,4 +164,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       <Skeleton feed={feed} mirrored={facing === "front"} />
     </>
   );
+}
+
+/** The recorded file as stored (size, rotation, frame rate), for the diagnostics. */
+function clipFacts(path: string): Record<string, unknown> {
+  try {
+    const v = boingPose.videoInfo(path);
+    return { width: v.width, height: v.height, rotation: v.rotation, fps: v.fps, peakFps: v.peakFps, duration: v.duration, frames: v.frameCount };
+  } catch (e) {
+    return { error: String((e as Error)?.message ?? e) };
+  }
 }

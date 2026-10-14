@@ -3,10 +3,11 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
+import { describeLog, diagnosticsReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
@@ -47,6 +48,9 @@ function Main() {
   const [details, setDetails] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [info, setInfo] = useState<CameraInfo | null>(null);
+  /** The last camera info, kept after Stop for the shared diagnostics. */
+  const lastInfo = useRef<CameraInfo | null>(null);
+  if (info) lastInfo.current = info;
   /** The report of a crash in the previous run (shown once, then cleared). */
   const [crash, setCrash] = useState(() => {
     try {
@@ -102,7 +106,7 @@ function Main() {
     },
     log: (e) => {
       console.log(`BOING_LOG ${JSON.stringify(e)}`);
-      setLogs((xs) => [e, ...xs].slice(0, 20));
+      setLogs((xs) => [e, ...xs].slice(0, 50));
     },
   };
 
@@ -337,6 +341,9 @@ function Main() {
           {logs.length > 0 && (
             <>
               <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
+              <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
+                <Text style={s.wideText}>Share diagnostics</Text>
+              </Pressable>
               {logs.map((e, i) => (
                 <Text key={i} style={s.diag}>{describeLog(e)}</Text>
               ))}
@@ -363,16 +370,18 @@ function Main() {
   );
 }
 
-/** One line per live jump: how it was measured. */
-function describeLog(e: Record<string, unknown>): string {
-  const n = (k: string, d = 1) => (typeof e[k] === "number" ? (e[k] as number).toFixed(d) : "–");
-  const cmOf = (k: string) => (typeof e[k] === "number" ? ((e[k] as number) * 100).toFixed(1) : "–");
-  if (e.tOff === undefined) return String(e.error ?? JSON.stringify(e));
-  const live = `live ${cmOf("hLive")} cm (${e.framesLive ?? "–"} fr)`;
-  if (e.h !== undefined && !e.error) {
-    return `t ${n("tOff")} s · ${live} → ${cmOf("h")} cm (${e.frames} fr, ${n("fps", 0)} fps, ${n("ms", 0)} ms, offset ${n("offset", 2)} s)`;
-  }
-  return `t ${n("tOff")} s · ${live} · not re-measured: ${e.error ?? e.reason ?? "?"}${e.ms !== undefined ? ` (${n("ms", 0)} ms)` : ""}`;
+/** Shares the diagnostics as text (e.g. to a chat or e-mail). */
+async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[]) {
+  const c = Platform.constants as Record<string, unknown>;
+  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || Platform.OS;
+  const context = {
+    time: new Date().toISOString(),
+    device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,
+    camera: facing,
+    "camera frame rate": info?.fps ? `${Math.round(info.fps)} fps` : "–",
+    "pose delegate": info?.delegate || "–",
+  };
+  await Share.share({ message: diagnosticsReport(context, logs) }).catch(() => {});
 }
 
 const pillStyle = (t: Tone) =>

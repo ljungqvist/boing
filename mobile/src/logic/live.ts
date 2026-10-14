@@ -15,8 +15,11 @@ export interface Clip {
 export interface LiveDeps {
   /** Starts recording the camera. Resolves once recording has started. */
   startClip(): Promise<Clip>;
-  /** Pose of every recorded frame between `from` and `to` (seconds from the clip's start). */
-  analyzeClip(path: string, from: number, to: number): Promise<{ frames: PoseFrame[]; size: Size }>;
+  /**
+   * Pose of every recorded frame between `from` and `to` (seconds from the clip's start), and
+   * facts about the recorded file (size, rotation, frame rate) for the diagnostics.
+   */
+  analyzeClip(path: string, from: number, to: number): Promise<{ frames: PoseFrame[]; size: Size; video?: Record<string, unknown> }>;
   deleteClip(path: string): void;
 }
 
@@ -135,7 +138,10 @@ export class LiveController {
     const c = this.clip;
     // The recording must include some standing before takeoff (the floor level).
     if (!c || !refinable(j) || j.tOff - 0.5 < c.start) {
-      this.events.log?.({ tOff: j.tOff, hLive: j.hPrimary, framesLive: j.airborneFrames, refined: false, reason: c ? "not-refinable-or-before-clip" : "no-clip" });
+      this.events.log?.({
+        tOff: j.tOff, hLive: j.hPrimary, framesLive: j.airborneFrames, gLive: j.gImplied, flagsLive: j.flags,
+        refined: false, reason: c ? "not-refinable-or-before-clip" : "no-clip",
+      });
       this.events.result(live);
       return;
     }
@@ -210,7 +216,10 @@ export class LiveController {
 
   private async refine(live: Jump, c: OpenClip, path: string | null) {
     const size = { width: 0, height: 0 };
-    const log: Record<string, unknown> = { tOff: live.tOff, hLive: live.hPrimary, framesLive: live.airborneFrames, flagsLive: live.flags };
+    const log: Record<string, unknown> = {
+      tOff: live.tOff, hLive: live.hPrimary, framesLive: live.airborneFrames, gLive: live.gImplied, flagsLive: live.flags,
+      fpsLive: this.fps,
+    };
     const fallback = () => {
       const m = this.liveMeasurement(live, size);
       m.approximate = accepted(live);
@@ -225,18 +234,24 @@ export class LiveController {
     try {
       const from = Math.max(0, live.tOff - BEFORE - PAD - c.start);
       const to = live.tOn + AFTER + PAD - c.start;
+      log.window = { from, to };
       const r = await withTimeout(this.deps.analyzeClip(path, from, to), this.timeoutMs);
       log.ms = Date.now() - t0;
       Object.assign(size, r.size);
       const frames = r.frames.map((f) => ({ t: f.t + c.start, lm: f.lm }));
       const fps = frameRate(frames);
-      Object.assign(log, { analysed: frames.length, fps });
-      const jump = closestJump(jumpsIn(frames, r.size), live.tOff);
+      Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video });
+      const found = jumpsIn(frames, r.size);
+      const jump = closestJump(found, live.tOff);
       if (!jump) {
         log.error = "no-match";
+        log.found = found.map((j) => ({ offset: j.tOff - live.tOff, h: j.hPrimary, frames: j.airborneFrames, flags: j.flags }));
         return fallback();
       }
-      Object.assign(log, { h: jump.hPrimary, hFlight: jump.hFlight, frames: jump.airborneFrames, offset: jump.tOff - live.tOff, flags: jump.flags });
+      Object.assign(log, {
+        h: jump.hPrimary, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
+        offset: jump.tOff - live.tOff, flags: jump.flags,
+      });
       if (jump.flags.some((f) => REJECT.includes(f))) {
         log.error = "rejected";
         return fallback();
