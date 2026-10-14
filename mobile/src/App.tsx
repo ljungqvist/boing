@@ -1,0 +1,375 @@
+import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { boingPose } from "react-native-boing-pose";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useCameraPermission } from "react-native-vision-camera";
+import type { LiveController, LiveEvents } from "./logic/live";
+import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
+import type { Status, Tone } from "./logic/status";
+import { measureVideo, type Measured } from "./logic/video";
+import { nativeAnalyzer } from "./native/analyze";
+import { announce } from "./native/feedback";
+import { modelPath, toPath } from "./native/models";
+import { Icon } from "./ui/Icon";
+import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
+import { JumpDetails, Row, Sheet } from "./ui/Sheets";
+import { C } from "./ui/theme";
+
+/** How long the latest height stays on top of the picture. */
+const FLASH_MS = 5000;
+
+type Mode = "idle" | "live" | "file";
+type Flash = { text: string; measuring: boolean } | null;
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="light" />
+      <Main />
+    </SafeAreaProvider>
+  );
+}
+
+function Main() {
+  const insets = useSafeAreaInsets();
+  const permission = useCameraPermission();
+  const [mode, setMode] = useState<Mode>("idle");
+  const [facing, setFacing] = useState<"front" | "back">("back");
+  const [status, setStatus] = useState<Status>({ text: "Press Start", tone: "idle" });
+  const [results, setResults] = useState<Measured[]>([]);
+  const [ignored, setIgnored] = useState<string[]>([]);
+  const [flash, setFlash] = useState<Flash>(null);
+  const [sound, setSound] = useState(true);
+  const [details, setDetails] = useState<number | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [info, setInfo] = useState<CameraInfo | null>(null);
+  const [session, setSession] = useState(0); // remounts the camera on Start/flip
+  const controller = useRef<LiveController | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const soundRef = useRef(sound);
+  soundRef.current = sound;
+  const run = useRef(0); // cancels a file analysis when something else starts
+
+  const showFlash = useCallback((f: Flash, ms = FLASH_MS) => {
+    clearTimeout(flashTimer.current);
+    setFlash(f);
+    if (f && !f.measuring) flashTimer.current = setTimeout(() => setFlash(null), ms);
+  }, []);
+
+  const clear = useCallback(() => {
+    setResults([]);
+    setIgnored([]);
+    setFlash(null);
+    setDetails(null);
+  }, []);
+
+  const addResult = useCallback((m: Measured, live: boolean) => {
+    const j = m.jump;
+    if (!accepted(j)) {
+      const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
+      setIgnored((xs) => [`at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm)`, ...xs]);
+      if (live && controller.current?.pending === 0) setFlash((f) => (f?.measuring ? null : f));
+      return;
+    }
+    setResults((xs) => [...xs, m]);
+    if (live) {
+      showFlash({ text: `${m.approximate ? "≈" : ""}${cm(j.hPrimary)}`, measuring: false });
+      announce(j.hPrimary, soundRef.current);
+    }
+  }, [showFlash]);
+
+  const events: LiveEvents = {
+    status: (s) => setStatus((old) => (old.text === s.text && old.tone === s.tone ? old : s)),
+    measuring: () => showFlash({ text: "Measuring…", measuring: true }),
+    result: (m) => {
+      console.log(`BOING_LIVE ${JSON.stringify({ h: m.jump.hPrimary, hFlight: m.jump.hFlight, fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags })}`);
+      addResult(m, true);
+    },
+    log: (e) => console.log(`BOING_LOG ${JSON.stringify(e)}`),
+  };
+
+  const stopLive = useCallback(() => {
+    setMode("idle");
+    setInfo(null);
+    deactivateKeepAwake();
+    setStatus({ text: "Stopped", tone: "idle" });
+  }, []);
+
+  const startLive = useCallback(async () => {
+    run.current++;
+    if (!permission.hasPermission && !(await permission.requestPermission())) {
+      setStatus({ text: "Camera permission needed", tone: "error" });
+      return;
+    }
+    clear();
+    setSession((n) => n + 1);
+    setMode("live");
+    setStatus({ text: "Starting the camera…", tone: "idle" });
+    void activateKeepAwakeAsync().catch(() => {});
+  }, [permission, clear]);
+
+  const fail = useCallback((e: unknown) => {
+    console.warn(e);
+    setMode("idle");
+    deactivateKeepAwake();
+    setStatus({ text: `Error: ${String((e as Error)?.message ?? e)}`, tone: "error" });
+  }, []);
+
+  /** Measures every jump in a video file (a file:// URI or a plain path). */
+  const analyzeFile = useCallback(async (uri: string, cleanup?: () => void) => {
+    const me = ++run.current;
+    clear();
+    setMode("file");
+    setStatus({ text: "Loading…", tone: "idle" });
+    try {
+      const model = await modelPath("heavy", (text) => me === run.current && setStatus({ text, tone: "idle" }));
+      const fileUri = uri.startsWith("file://") ? uri : `file://${uri}`;
+      const v = boingPose.videoInfo(toPath(fileUri));
+      const t0 = Date.now();
+      const r = await measureVideo(
+        { duration: v.duration, fps: v.fps, captureFps: v.captureFps },
+        nativeAnalyzer(fileUri, model),
+        (p) => me === run.current && setStatus({ text: `Analysing · ${Math.round(p * 100)} %`, tone: "idle" }),
+      );
+      if (me !== run.current) return;
+      console.log(`BOING_FILE ${JSON.stringify({
+        uri, ms: Date.now() - t0, info: v, timeScale: r.timeScale, fps: r.fps,
+        jumps: r.jumps.map((m) => ({
+          tOff: m.jump.tOff, tOn: m.jump.tOn, h: m.jump.hPrimary, hFlight: m.jump.hFlight, frames: m.jump.airborneFrames,
+          fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags,
+        })),
+      })}`);
+      for (const m of r.jumps) addResult(m, false);
+      const ok = r.jumps.filter((m) => accepted(m.jump));
+      const how = r.timeScale < 1 ? ` · slow motion, captured at ${Math.round(v.captureFps)} fps` : ` · ${Math.round(r.fps)} fps`;
+      setStatus({ text: `${ok.length} jump${ok.length === 1 ? "" : "s"} found${how}`, tone: ok.length ? "ready" : "idle" });
+      if (ok.length) showFlash({ text: cm(Math.max(...ok.map((m) => m.jump.hPrimary))), measuring: false });
+    } catch (e) {
+      console.log(`BOING_FILE ${JSON.stringify({ uri, error: String((e as Error)?.message ?? e) })}`);
+      if (me === run.current) fail(e);
+    } finally {
+      if (me === run.current) setMode("idle");
+      cleanup?.();
+    }
+  }, [clear, fail, showFlash]);
+
+  const openFile = useCallback(async () => {
+    if (mode === "live") stopLive();
+    const res = await DocumentPicker.getDocumentAsync({ type: "video/*", copyToCacheDirectory: true });
+    if (res.canceled || !res.assets[0]) return;
+    const uri = res.assets[0].uri;
+    await analyzeFile(uri, () => {
+      try {
+        new File(uri).delete(); // the picker's copy
+      } catch {
+        // already gone
+      }
+    });
+  }, [mode, stopLive, analyzeFile]);
+
+  // Testing hook: boing://analyze?path=/sdcard/Android/data/info.ljungqvist.boing/files/x.mp4
+  useEffect(() => {
+    const handle = (url: string | null) => {
+      const m = url?.match(/^boing:\/\/analyze\?path=(.+)$/);
+      if (m) void analyzeFile(decodeURIComponent(m[1]));
+    };
+    void Linking.getInitialURL().then(handle);
+    const sub = Linking.addEventListener("url", (e) => handle(e.url));
+    return () => sub.remove();
+  }, [analyzeFile]);
+
+  const heights = results.map((m) => m.jump.hPrimary);
+  const sum = summarize(heights);
+  const live = mode === "live";
+
+  return (
+    <View style={s.root}>
+      <View style={s.viewer}>
+        {live && (
+          <LiveCamera
+            key={`${session}-${facing}`}
+            facing={facing}
+            events={events}
+            controllerRef={controller}
+            onStep={(text) => setStatus({ text, tone: "idle" })}
+            onError={fail}
+            onInfo={setInfo}
+          />
+        )}
+        {!live && results.length === 0 && mode !== "file" && (
+          <View style={s.placeholder}>
+            <Icon name="logo" size={72} />
+            <Text style={s.placeholderText}>
+              Place the phone so your whole body, <Text style={s.b}>including your feet</Text>, is in view.
+              {"\n"}Then press <Text style={s.b}>Start</Text> and jump with hands on hips.
+            </Text>
+          </View>
+        )}
+
+        <View style={[s.top, { paddingTop: insets.top + 8 }]}>
+          <View style={s.brand}>
+            <Icon name="logo" size={22} />
+            <Text style={s.brandText}>Boing</Text>
+          </View>
+          <View style={[s.pill, pillStyle(status.tone)]}>
+            <Text style={[s.pillText, pillText(status.tone)]} numberOfLines={1}>{status.text}</Text>
+          </View>
+          <View style={s.topActions}>
+            <Pressable onPress={() => setSound((x) => !x)} hitSlop={8} accessibilityLabel="Spoken result on/off">
+              <Icon name={sound ? "soundOn" : "soundOff"} />
+            </Pressable>
+            <Pressable onPress={() => setMenu(true)} hitSlop={8} accessibilityLabel="Menu">
+              <Icon name="menu" />
+            </Pressable>
+          </View>
+        </View>
+
+        {flash && (
+          <View style={s.flashWrap} pointerEvents="none">
+            <View style={s.flashBox}>
+              {flash.measuring ? (
+                <Text style={s.flashMeasuring}>{flash.text}</Text>
+              ) : (
+                <Text style={s.flash}>
+                  {flash.text}
+                  <Text style={s.flashUnit}> cm</Text>
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        <View style={[s.bottom, { paddingBottom: insets.bottom + 12 }]}>
+          {results.length > 0 && (
+            <View style={s.session}>
+              <Text style={s.summary}>
+                <Text style={s.b}>{sum.count}</Text> jump{sum.count === 1 ? "" : "s"} · Best <Text style={s.b}>{cm(sum.best)}</Text> · Average{" "}
+                <Text style={s.b}>{cm(sum.average)}</Text> cm
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {results.map((m, i) => (
+                  <Pressable
+                    key={i}
+                    onPress={() => setDetails(i)}
+                    style={[s.chip, m.jump.hPrimary === sum.best && s.chipBest, i === results.length - 1 && s.chipLatest]}
+                  >
+                    <Text style={[s.chipText, m.jump.hPrimary === sum.best && { color: C.accent }]}>
+                      {m.approximate ? "≈" : ""}
+                      {cm(m.jump.hPrimary)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+          <View style={s.controls}>
+            <Pressable style={s.round} onPress={openFile} accessibilityLabel="Analyse a video" disabled={mode === "file"}>
+              <Icon name="film" />
+            </Pressable>
+            <Pressable
+              style={[s.shutter, live && s.shutterRunning]}
+              onPress={() => (live ? stopLive() : void startLive())}
+              accessibilityLabel={live ? "Stop" : "Start"}
+            >
+              <Text style={s.shutterText}>{live ? "Stop" : "Start"}</Text>
+            </Pressable>
+            <Pressable
+              style={s.round}
+              onPress={() => setFacing((f) => (f === "back" ? "front" : "back"))}
+              accessibilityLabel="Switch camera"
+            >
+              <Icon name="flip" />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {details !== null && results[details] && (
+        <JumpDetails m={results[details]} index={details} count={results.length} onClose={() => setDetails(null)} />
+      )}
+      {menu && (
+        <Sheet title="Settings" onClose={() => setMenu(false)}>
+          <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
+          {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
+          {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
+          {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
+          {ignored.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
+              {ignored.map((x, i) => (
+                <Text key={i} style={s.hint}>{x}</Text>
+              ))}
+            </>
+          )}
+          <Text style={s.hint}>
+            Boing measures the height of a countermovement jump from the camera. Every recorded frame around
+            a jump is analysed again, at the camera's full frame rate.
+          </Text>
+          <Pressable onPress={() => void Linking.openURL("https://github.com/ljungqvist/boing")}>
+            <Text style={[s.hint, { color: C.accent }]}>About Boing</Text>
+          </Pressable>
+        </Sheet>
+      )}
+    </View>
+  );
+}
+
+const pillStyle = (t: Tone) =>
+  ({ idle: {}, ready: { backgroundColor: C.ok }, adjust: { backgroundColor: C.warn }, air: { backgroundColor: C.accent }, error: { backgroundColor: C.error } })[t];
+const pillText = (t: Tone) =>
+  ({ idle: {}, ready: { color: "#04130a" }, adjust: { color: "#1d1500" }, air: { color: "#1f0d00" }, error: {} })[t];
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.bg },
+  viewer: { flex: 1, backgroundColor: "#000" },
+  placeholder: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", padding: 32, gap: 24 },
+  placeholderText: { color: C.muted, textAlign: "center", lineHeight: 22, fontSize: 15 },
+  b: { color: C.text, fontWeight: "600" },
+  top: {
+    position: "absolute", left: 0, right: 0, top: 0, flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 12, paddingBottom: 12, gap: 8, backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  brand: { flexDirection: "row", alignItems: "center", gap: 6 },
+  brandText: { color: C.text, fontWeight: "700", fontSize: 17 },
+  pill: {
+    flex: 1, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999,
+    backgroundColor: C.surface, borderColor: C.line, borderWidth: 1, alignItems: "center",
+  },
+  pillText: { color: C.text, fontSize: 14, fontWeight: "600" },
+  topActions: { flexDirection: "row", gap: 14 },
+  flashWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+  flashBox: { backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 16, paddingHorizontal: 20, paddingVertical: 6 },
+  flash: { color: C.text, fontSize: 88, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  flashUnit: { fontSize: 28, fontWeight: "500", color: C.muted },
+  flashMeasuring: { color: C.muted, fontSize: 36, fontWeight: "600", paddingVertical: 8 },
+  bottom: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 12, backgroundColor: "rgba(0,0,0,0.35)" },
+  session: {
+    backgroundColor: C.surface, borderColor: C.line, borderWidth: 1, borderRadius: 16,
+    padding: 10, marginTop: 10,
+  },
+  summary: { color: C.muted, fontSize: 14, marginBottom: 6, marginLeft: 4, fontVariant: ["tabular-nums"] },
+  chip: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: C.line,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  chipBest: { borderColor: C.accent },
+  chipLatest: { backgroundColor: "rgba(255,255,255,0.16)" },
+  chipText: { color: C.text, fontWeight: "600", fontVariant: ["tabular-nums"] },
+  controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-evenly", paddingTop: 14 },
+  round: {
+    width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center",
+    backgroundColor: C.surface, borderColor: C.line, borderWidth: 1,
+  },
+  shutter: {
+    width: 84, height: 84, borderRadius: 42, borderWidth: 4, borderColor: "#fff",
+    backgroundColor: C.accent, alignItems: "center", justifyContent: "center",
+  },
+  shutterRunning: { backgroundColor: "#fff" },
+  shutterText: { color: "#1f0d00", fontWeight: "800", fontSize: 16 },
+  sectionTitle: { color: C.text, fontWeight: "600", marginTop: 16, marginBottom: 4 },
+  hint: { color: C.muted, fontSize: 13, marginTop: 12, lineHeight: 19 },
+});

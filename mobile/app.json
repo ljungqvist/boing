@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Boing",
+    "slug": "boing",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "boing",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0e0e10",
+    "ios": {
+      "bundleIdentifier": "info.ljungqvist.boing",
+      "supportsTablet": true,
+      "deploymentTarget": "15.5",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Boing films your jump to measure its height."
+      }
+    },
+    "android": {
+      "package": "info.ljungqvist.boing",
+      "permissions": ["android.permission.CAMERA"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"],
+      "adaptiveIcon": {
+        "backgroundColor": "#0e0e10",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 28
+          }
+        }
+      ]
+    ]
+  }
+}

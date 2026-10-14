@@ -1,0 +1,24 @@
+{
+  "$schema": "https://nitro.margelo.com/nitro.schema.json",
+  "cxxNamespace": ["boingpose"],
+  "ios": {
+    "iosModuleName": "NitroBoingPose"
+  },
+  "android": {
+    "androidNamespace": ["boingpose"],
+    "androidCxxLibName": "NitroBoingPose"
+  },
+  "autolinking": {
+    "BoingPose": {
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "HybridBoingPose"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "HybridBoingPose"
+      }
+    }
+  },
+  "ignorePaths": ["**/node_modules"]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "react-native-boing-pose",
+  "version": "0.1.0",
+  "description": "MediaPipe pose landmarks for VisionCamera frames and video files (Boing)",
+  "private": true,
+  "main": "src/index",
+  "types": "src/index.ts",
+  "react-native": "src/index",
+  "source": "src/index",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "specs": "nitrogen"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/ljungqvist/boing",
+  "author": "Boing",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "*",
+    "react-native-vision-camera": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native-nitro-modules": {
+      "optional": true
+    }
+  }
+}
