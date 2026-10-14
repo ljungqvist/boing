@@ -44,12 +44,13 @@ namespace margelo::nitro::boingpose {
     double duration     SWIFT_PRIVATE;
     double frameCount     SWIFT_PRIVATE;
     double fps     SWIFT_PRIVATE;
+    double peakFps     SWIFT_PRIVATE;
     double captureFps     SWIFT_PRIVATE;
     double rotation     SWIFT_PRIVATE;
 
   public:
     VideoInfo() = default;
-    explicit VideoInfo(double width, double height, double duration, double frameCount, double fps, double captureFps, double rotation): width(width), height(height), duration(duration), frameCount(frameCount), fps(fps), captureFps(captureFps), rotation(rotation) {}
+    explicit VideoInfo(double width, double height, double duration, double frameCount, double fps, double peakFps, double captureFps, double rotation): width(width), height(height), duration(duration), frameCount(frameCount), fps(fps), peakFps(peakFps), captureFps(captureFps), rotation(rotation) {}
 
   public:
     friend bool operator==(const VideoInfo& lhs, const VideoInfo& rhs) = default;
@@ -70,6 +71,7 @@ namespace margelo::nitro {
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "duration"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "frameCount"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "fps"))),
+        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "peakFps"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "captureFps"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "rotation")))
       );
@@ -81,6 +83,7 @@ namespace margelo::nitro {
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "duration"), JSIConverter<double>::toJSI(runtime, arg.duration));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "frameCount"), JSIConverter<double>::toJSI(runtime, arg.frameCount));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "fps"), JSIConverter<double>::toJSI(runtime, arg.fps));
+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "peakFps"), JSIConverter<double>::toJSI(runtime, arg.peakFps));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "captureFps"), JSIConverter<double>::toJSI(runtime, arg.captureFps));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "rotation"), JSIConverter<double>::toJSI(runtime, arg.rotation));
       return obj;
@@ -98,6 +101,7 @@ namespace margelo::nitro {
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "duration")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "frameCount")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "fps")))) return false;
+      if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "peakFps")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "captureFps")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "rotation")))) return false;
       return true;

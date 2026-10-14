@@ -32,9 +32,7 @@ fun readVideoInfo(path: String): VideoInfo {
     val capture = meta(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toDoubleOrNull() ?: 0.0
     // Count samples and their time span directly (no decoding): exact for variable frame rates.
     val extractor = MediaExtractor()
-    var count = 0
-    var first = Long.MAX_VALUE
-    var last = Long.MIN_VALUE
+    val times = ArrayList<Long>()
     var durationUs = 0L
     try {
       extractor.setDataSource(path)
@@ -43,16 +41,19 @@ fun readVideoInfo(path: String): VideoInfo {
       while (true) {
         val t = extractor.sampleTime
         if (t < 0) break
-        count++
-        first = minOf(first, t)
-        last = maxOf(last, t)
+        times.add(t)
         if (!extractor.advance()) break
       }
     } finally {
       extractor.release()
     }
-    val span = if (count > 1) (last - first) / 1e6 else 0.0
+    // Samples come in decode order; presentation order is sorted time.
+    times.sort()
+    val count = times.size
+    val span = if (count > 1) (times[count - 1] - times[0]) / 1e6 else 0.0
     val fps = if (span > 0) (count - 1) / span else 0.0
+    val gaps = (1 until count).map { times[it] - times[it - 1] }.filter { it > 0 }.sorted()
+    val peakFps = if (gaps.isNotEmpty()) 1e6 / gaps[gaps.size / 20] else fps
     val upright = rotation % 180 != 0
     return VideoInfo(
       width = if (upright) h else w,
@@ -60,6 +61,7 @@ fun readVideoInfo(path: String): VideoInfo {
       duration = if (durationUs > 0) durationUs / 1e6 else span,
       frameCount = count.toDouble(),
       fps = fps,
+      peakFps = peakFps,
       captureFps = capture,
       rotation = rotation.toDouble(),
     )

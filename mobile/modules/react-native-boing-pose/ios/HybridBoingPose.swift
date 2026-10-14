@@ -16,7 +16,7 @@ class HybridBoingPose: HybridBoingPoseSpec {
     let fps = Double(track.nominalFrameRate)
     return VideoInfo(
       width: abs(size.width), height: abs(size.height), duration: duration,
-      frameCount: (duration * fps).rounded(), fps: fps,
+      frameCount: (duration * fps).rounded(), fps: fps, peakFps: fps,
       // iPhone slow-motion files keep real-time timestamps; only Android stores a separate capture rate.
       captureFps: 0, rotation: rotationDegrees(track.preferredTransform)
     )

@@ -131,7 +131,7 @@ function Main() {
       const v = boingPose.videoInfo(toPath(fileUri));
       const t0 = Date.now();
       const r = await measureVideo(
-        { duration: v.duration, fps: v.fps, captureFps: v.captureFps },
+        { duration: v.duration, fps: v.fps, peakFps: v.peakFps, captureFps: v.captureFps },
         nativeAnalyzer(fileUri, model),
         (p) => me === run.current && setStatus({ text: `Analysing · ${Math.round(p * 100)} %`, tone: "idle" }),
       );

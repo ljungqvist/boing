@@ -35,6 +35,9 @@ data class VideoInfo(
   val fps: Double,
   @DoNotStrip
   @Keep
+  val peakFps: Double,
+  @DoNotStrip
+  @Keep
   val captureFps: Double,
   @DoNotStrip
   @Keep
@@ -50,6 +53,7 @@ data class VideoInfo(
       && Objects.deepEquals(this.duration, other.duration)
       && Objects.deepEquals(this.frameCount, other.frameCount)
       && Objects.deepEquals(this.fps, other.fps)
+      && Objects.deepEquals(this.peakFps, other.peakFps)
       && Objects.deepEquals(this.captureFps, other.captureFps)
       && Objects.deepEquals(this.rotation, other.rotation)
   }
@@ -61,6 +65,7 @@ data class VideoInfo(
       duration,
       frameCount,
       fps,
+      peakFps,
       captureFps,
       rotation
     ).contentDeepHashCode()
@@ -74,8 +79,8 @@ data class VideoInfo(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(width: Double, height: Double, duration: Double, frameCount: Double, fps: Double, captureFps: Double, rotation: Double): VideoInfo {
-      return VideoInfo(width, height, duration, frameCount, fps, captureFps, rotation)
+    private fun fromCpp(width: Double, height: Double, duration: Double, frameCount: Double, fps: Double, peakFps: Double, captureFps: Double, rotation: Double): VideoInfo {
+      return VideoInfo(width, height, duration, frameCount, fps, peakFps, captureFps, rotation)
     }
   }
 }

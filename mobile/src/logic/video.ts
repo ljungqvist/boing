@@ -29,6 +29,8 @@ export interface FileFacts {
   duration: number;
   /** Average frames per second of the file's timeline. */
   fps: number;
+  /** Frame rate from the shortest frame gaps (variable-frame-rate files average lower). */
+  peakFps?: number;
   /** Capture rate from the metadata (Android slow motion), or 0. */
   captureFps: number;
 }
@@ -48,15 +50,18 @@ export async function measureVideo(
   analyze: Analyze,
   onProgress: (fraction: number) => void = () => {},
 ): Promise<{ jumps: Measured[]; fps: number; timeScale: number; captureFps: number }> {
-  const scale = timeScaleOf(file.captureFps, file.fps);
-  const realFps = file.fps / scale;
+  // Slow motion is judged from the shortest frame gaps, like the web app: a variable-frame-rate
+  // recording reports its maximum rate as capture rate but averages lower.
+  const fileFps = file.peakFps ?? file.fps;
+  const scale = timeScaleOf(file.captureFps, fileFps);
+  const realFps = fileFps / scale;
   const twoPass = realFps > 35;
   const first = await analyze(
     { from: 0, to: file.duration, minInterval: twoPass ? FIRST_PASS_INTERVAL / scale * 0.98 : 0 },
     (p) => onProgress(twoPass ? p / 2 : p),
   );
   // One pass: the frame times show whether the file is slow motion (Android metadata alone can't).
-  const scale1 = twoPass ? scale : timeScaleOf(file.captureFps, file.fps, first.frames.map((f) => f.t));
+  const scale1 = twoPass ? scale : timeScaleOf(file.captureFps, fileFps, first.frames.map((f) => f.t));
   const frames1 = first.frames.map((f) => ({ t: f.t * scale1, lm: f.lm }));
   const fps1 = frameRate(frames1);
   const found = jumpsIn(frames1, first.size);
@@ -76,7 +81,7 @@ export async function measureVideo(
     const r = await analyze({ from: w.from / scale, to: w.to / scale, minInterval: 0 }, (p) =>
       onProgress(0.5 + (0.5 * (done + p * (w.to - w.from))) / total));
     done += w.to - w.from;
-    const s = timeScaleOf(file.captureFps, file.fps, r.frames.map((f) => f.t));
+    const s = timeScaleOf(file.captureFps, fileFps, r.frames.map((f) => f.t));
     const frames = r.frames.map((f) => ({ t: f.t * s, lm: f.lm }));
     const wFps = frameRate(frames);
     fps = Math.max(fps, wFps);

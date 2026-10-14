@@ -18,8 +18,8 @@ public extension VideoInfo {
   /**
    * Create a new instance of `VideoInfo`.
    */
-  init(width: Double, height: Double, duration: Double, frameCount: Double, fps: Double, captureFps: Double, rotation: Double) {
-    self.init(width, height, duration, frameCount, fps, captureFps, rotation)
+  init(width: Double, height: Double, duration: Double, frameCount: Double, fps: Double, peakFps: Double, captureFps: Double, rotation: Double) {
+    self.init(width, height, duration, frameCount, fps, peakFps, captureFps, rotation)
   }
 
   @inline(__always)
@@ -45,6 +45,11 @@ public extension VideoInfo {
   @inline(__always)
   var fps: Double {
     return self.__fps
+  }
+  
+  @inline(__always)
+  var peakFps: Double {
+    return self.__peakFps
   }
   
   @inline(__always)

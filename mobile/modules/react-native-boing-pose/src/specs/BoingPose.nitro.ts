@@ -11,6 +11,11 @@ export interface VideoInfo {
   frameCount: number
   /** Average frames per second of the file's own timeline. */
   fps: number
+  /**
+   * Frame rate from the shortest frame gaps (5th percentile): the recording rate of
+   * variable-frame-rate files, whose average is lower.
+   */
+  peakFps: number
   /** Frame rate the camera captured at (Android slow motion), or 0 when the file doesn't say. */
   captureFps: number
   /** Degrees the stored frames must be rotated clockwise to display upright. */

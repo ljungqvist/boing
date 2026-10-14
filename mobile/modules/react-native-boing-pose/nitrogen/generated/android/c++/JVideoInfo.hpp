@@ -41,6 +41,8 @@ namespace margelo::nitro::boingpose {
       double frameCount = this->getFieldValue(fieldFrameCount);
       static const auto fieldFps = clazz->getField<double>("fps");
       double fps = this->getFieldValue(fieldFps);
+      static const auto fieldPeakFps = clazz->getField<double>("peakFps");
+      double peakFps = this->getFieldValue(fieldPeakFps);
       static const auto fieldCaptureFps = clazz->getField<double>("captureFps");
       double captureFps = this->getFieldValue(fieldCaptureFps);
       static const auto fieldRotation = clazz->getField<double>("rotation");
@@ -51,6 +53,7 @@ namespace margelo::nitro::boingpose {
         duration,
         frameCount,
         fps,
+        peakFps,
         captureFps,
         rotation
       );
@@ -62,7 +65,7 @@ namespace margelo::nitro::boingpose {
      */
     [[maybe_unused]]
     static jni::local_ref<JVideoInfo::javaobject> fromCpp(const VideoInfo& value) {
-      using JSignature = JVideoInfo(double, double, double, double, double, double, double);
+      using JSignature = JVideoInfo(double, double, double, double, double, double, double, double);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -72,6 +75,7 @@ namespace margelo::nitro::boingpose {
         value.duration,
         value.frameCount,
         value.fps,
+        value.peakFps,
         value.captureFps,
         value.rotation
       );
