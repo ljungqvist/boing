@@ -25,4 +25,9 @@ export interface Signals {
   toe: number[];
   /** Vertical nose-to-heel distance in pixels (a body-size proxy). */
   bodyPx: number[];
+  /**
+   * How far the hips, heels or toes lie outside the picture (fraction of the frame size,
+   * 0 when inside); NaN without a person. The head may leave the picture at the apex.
+   */
+  outside?: number[];
 }

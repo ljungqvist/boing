@@ -25,6 +25,17 @@ describe("toSignals", () => {
     expect(s.t).toEqual([0, 1 / 30]);
   });
 
+  it("measures how far the hips and feet lie outside the picture", () => {
+    const s = toSignals(video([
+      frame(0, { 0: 0.1, 23: 0.5, 24: 0.5, 29: 0.9, 30: 0.9, 31: 0.95, 32: 0.95 }),
+      frame(0.1, { 0: -0.2, 23: 0.6, 24: 0.6, 29: 1.02, 30: 1.04, 31: 1.06, 32: 1.05 }),
+      { t: 0.2, lm: null },
+    ]));
+    expect(s.outside![0]).toBe(0);
+    expect(s.outside![1]).toBeCloseTo(0.06); // the head may leave the picture; the toes may not
+    expect(Number.isNaN(s.outside![2])).toBe(true);
+  });
+
   it("rising body gives rising signal", () => {
     const s = toSignals(video([frame(0, { 23: 0.5, 24: 0.5 }), frame(0.1, { 23: 0.4, 24: 0.4 })]));
     expect(s.hip[1]).toBeGreaterThan(s.hip[0]);

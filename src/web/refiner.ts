@@ -32,7 +32,7 @@ export interface Refined {
 }
 export type RefineResult = Refined | { error: string; ms: number; flags?: JumpFlag[] };
 
-export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible"];
+export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent"];
 
 /**
  * Re-analyses a live jump from a recorded piece, using every recorded frame.
