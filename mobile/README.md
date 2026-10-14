@@ -55,7 +55,7 @@ would wait for an "Open in Boing?" prompt) and reads the result from the app's
 - Not yet tried on a device: the live camera (preview, skeleton overlay, 120/240 fps formats) and
   the GPU path.
 - iPhone slow-motion videos: files store no capture rate (Android does), so a slow-motion export
-  is measured as if it were real time (heights far too low).
+  is measured as if it were real time (the flight looks longer: heights far too high).
 
 ## Frame rates
 
