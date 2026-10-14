@@ -24,6 +24,15 @@ RESULT="$DOCS/boing-file-result.json"
 LOG="$DOCS/boing-test-log.txt" # the app's status lines while testing
 rm -f "$RESULT" "$LOG"
 xcrun simctl openurl "$SIM" "boing://analyze?url=http://localhost:$PORT/$NAME"
+sleep 15
+if [[ ! -s $LOG ]]; then
+  # Usually iOS asking "Open in Boing?": approve the scheme before booting (see .github/workflows/ios.yml).
+  echo "the link didn't reach the app; screen text:" >&2
+  SHOT=$(mktemp -t boing).png
+  xcrun simctl io "$SIM" screenshot "$SHOT" > /dev/null 2>&1
+  swift "$(dirname "$0")/ocr.swift" "$SHOT" >&2 || true
+  exit 1
+fi
 
 start=$(date +%s)
 until [[ -s $RESULT ]]; do
