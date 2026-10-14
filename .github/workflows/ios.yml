@@ -83,9 +83,6 @@ jobs:
           [[ -n $UDID ]] || UDID=$(xcrun simctl list devices available | grep -m1 -E "iPad|iPhone" | grep -oE "[0-9A-F-]{36}")
           xcrun simctl list devices available | grep "$UDID"
           echo "SIM=$UDID" >> "$GITHUB_ENV"
-          # Open boing:// links without the "Open in Boing?" prompt (it blocks the test hook).
-          defaults write ~/Library/Developer/CoreSimulator/Devices/$UDID/data/Library/Preferences/com.apple.launchservices.schemeapproval \
-            "com.apple.CoreSimulator.CoreSimulatorBridge-->boing" -string info.ljungqvist.boing
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl install "$UDID" build/sim/Build/Products/Release-iphonesimulator/Boing.app
