@@ -97,6 +97,20 @@ namespace margelo::nitro::boingpose {
       auto __value = std::move(__result.value());
       return __value;
     }
+    inline std::string lastCrash() override {
+      auto __result = _swiftPart.lastCrash();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline void clearCrash() override {
+      auto __result = _swiftPart.clearCrash();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
     inline std::shared_ptr<Promise<AnalyzeResult>> analyzeVideo(const std::string& path, const AnalyzeOptions& options, const std::function<void(double /* fraction */)>& onProgress) override {
       auto __result = _swiftPart.analyzeVideo(path, std::forward<decltype(options)>(options), onProgress);
       if (__result.hasError()) [[unlikely]] {

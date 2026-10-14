@@ -5,6 +5,10 @@ import NitroModules
 import UIKit
 
 class HybridBoingPose: HybridBoingPoseSpec {
+  // Crash reports are only recorded on Android so far.
+  func lastCrash() throws -> String { "" }
+  func clearCrash() throws {}
+
   func createDetector(modelPath: String, preferGpu: Bool) throws -> (any HybridPoseDetectorSpec) {
     return try HybridPoseDetector(modelPath: modelPath, preferGpu: preferGpu)
   }

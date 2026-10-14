@@ -28,19 +28,26 @@ export class PoseFeed {
   }
 }
 
-/** The detected body over the preview (letterboxed like the preview: resizeMode "contain"). */
-export function Skeleton({ feed }: { feed: PoseFeed }) {
+/**
+ * The detected body over the preview (letterboxed like the preview: resizeMode "contain").
+ * Frames are upright the way the device is held; `rotation` (degrees, from VisionCamera's
+ * onUIRotationChanged) is how far that is from the screen. Upside down is mirrored back;
+ * sideways (90/270) the skeleton is hidden rather than drawn in the wrong place.
+ */
+export function Skeleton({ feed, rotation = 0 }: { feed: PoseFeed; rotation?: number }) {
   const [pose, setPose] = useState<PoseView | null>(null);
   const [view, setView] = useState<Size>({ width: 0, height: 0 });
   useEffect(() => feed.subscribe(setPose), [feed]);
   const lm = pose?.lm;
   let content = null;
-  if (lm && pose.size.width > 0 && view.width > 0) {
+  const r = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
+  if (lm && pose.size.width > 0 && view.width > 0 && r % 180 === 0) {
     const k = Math.min(view.width / pose.size.width, view.height / pose.size.height);
     const w = pose.size.width * k, h = pose.size.height * k;
     const ox = (view.width - w) / 2, oy = (view.height - h) / 2;
-    const X = (i: number) => ox + lm[i][0] * w;
-    const Y = (i: number) => oy + lm[i][1] * h;
+    const flip = r === 180;
+    const X = (i: number) => ox + (flip ? 1 - lm[i][0] : lm[i][0]) * w;
+    const Y = (i: number) => oy + (flip ? 1 - lm[i][1] : lm[i][1]) * h;
     const color = pose.air ? C.toe : "rgba(80, 220, 160, 0.9)";
     content = (
       <Svg width={view.width} height={view.height}>

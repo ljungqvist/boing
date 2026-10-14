@@ -4,6 +4,14 @@ import com.margelo.nitro.core.Promise
 import kotlin.math.roundToLong
 
 class HybridBoingPose : HybridBoingPoseSpec() {
+  init {
+    CrashReports.install()
+  }
+
+  override fun lastCrash(): String = CrashReports.last()
+
+  override fun clearCrash() = CrashReports.clear()
+
   override fun createDetector(modelPath: String, preferGpu: Boolean): HybridPoseDetectorSpec =
     HybridPoseDetector(modelPath, preferGpu)
 

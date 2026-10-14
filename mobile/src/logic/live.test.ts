@@ -19,6 +19,8 @@ function setup(opts: { recordFails?: boolean; analyzeFails?: boolean; startLag?:
   const deps: LiveDeps = {
     async startClip() {
       if (opts.recordFails) throw new Error("no recorder");
+      // Like CameraX: one recording at a time.
+      if (clips.some((x) => !x.stopped)) throw new Error("A recording is already in progress");
       const c = { start: now + (opts.startLag ?? 0), stopped: false, deleted: false };
       clips.push(c);
       return { stop: async () => { c.stopped = true; return `clip@${c.start}`; } };
@@ -73,6 +75,14 @@ describe("LiveController", () => {
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
     // Only the stretch around each jump is analysed.
     expect(s.analysed.every((w) => w.to - w.from < 3)).toBe(true);
+  });
+
+  it("replaces long clips without jumps, never recording two at once", async () => {
+    const s = setup();
+    await s.run();
+    // 14 s with jumps at 4 and 9 s: clips end after each jump; none runs twice at a time.
+    expect(s.clips.length).toBeGreaterThanOrEqual(3);
+    expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
   });
 
   it("tolerates an inexact clip start time", async () => {

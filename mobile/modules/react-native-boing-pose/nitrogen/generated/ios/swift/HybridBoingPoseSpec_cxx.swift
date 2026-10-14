@@ -152,6 +152,29 @@ open class HybridBoingPoseSpec_cxx {
   }
   
   @inline(__always)
+  public final func lastCrash() -> bridge.Result_std__string_ {
+    do {
+      let __result = try self.__implementation.lastCrash()
+      let __resultCpp = std.string(__result)
+      return bridge.create_Result_std__string_(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__string_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func clearCrash() -> bridge.Result_void_ {
+    do {
+      try self.__implementation.clearCrash()
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
   public final func analyzeVideo(path: std.string, options: AnalyzeOptions, onProgress: bridge.Func_void_double) -> bridge.Result_std__shared_ptr_Promise_AnalyzeResult___ {
     do {
       let __result = try self.__implementation.analyzeVideo(path: String(path), options: options, onProgress: { () -> (Double) -> Void in

@@ -126,7 +126,7 @@ export class LiveController {
     this.stopped = true;
     const c = this.clip;
     this.clip = null;
-    if (c) await this.finish(c);
+    if (c) await this.measure(c, await this.stopClip(c));
     await this.queue;
   }
 
@@ -166,22 +166,37 @@ export class LiveController {
     }
   }
 
+  /**
+   * Ends the current clip and starts the next. The old recording is stopped first: cameras
+   * record one file at a time (CameraX crashes otherwise). The short gap is right after a
+   * jump's landing or during a quiet stretch.
+   */
   private async rotate() {
     const old = this.clip;
     if (!old) return;
     this.clip = null;
-    await this.startClip();
-    await this.finish(old);
+    this.starting = true; // no new clip from push() until the old one is finished
+    let path: string | null;
+    try {
+      path = await this.stopClip(old);
+    } finally {
+      this.starting = false;
+    }
+    if (!this.stopped) await this.startClip();
+    await this.measure(old, path);
   }
 
-  /** Stops a clip, measures its jumps (one at a time), then deletes it. */
-  private async finish(c: OpenClip) {
-    let path: string | null = null;
+  private async stopClip(c: OpenClip): Promise<string | null> {
     try {
-      path = await c.clip.stop();
+      return await c.clip.stop();
     } catch (e) {
       this.events.log?.({ error: `stop recording: ${String((e as Error)?.message ?? e)}` });
+      return null;
     }
+  }
+
+  /** Measures a finished clip's jumps (one at a time), then deletes it. */
+  private async measure(c: OpenClip, path: string | null) {
     const job = this.queue.then(async () => {
       for (const j of c.jumps) {
         await this.refine(j, c, path);

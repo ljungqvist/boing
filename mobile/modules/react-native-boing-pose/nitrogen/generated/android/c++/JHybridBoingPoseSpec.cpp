@@ -21,12 +21,12 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include "JHybridPoseDetectorSpec.hpp"
 #include "VideoInfo.hpp"
 #include "JVideoInfo.hpp"
+#include <string>
 #include "AnalyzeResult.hpp"
 #include <NitroModules/Promise.hpp>
 #include <NitroModules/JPromise.hpp>
 #include "JAnalyzeResult.hpp"
 #include <vector>
-#include <string>
 #include "AnalyzeOptions.hpp"
 #include "JAnalyzeOptions.hpp"
 #include <functional>
@@ -75,6 +75,15 @@ namespace margelo::nitro::boingpose {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JVideoInfo>(jni::alias_ref<jni::JString> /* path */)>("videoInfo");
     auto __result = method(_javaPart, jni::make_jstring(path));
     return __result->toCpp();
+  }
+  std::string JHybridBoingPoseSpec::lastCrash() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<jni::JString>()>("lastCrash");
+    auto __result = method(_javaPart);
+    return __result->toStdString();
+  }
+  void JHybridBoingPoseSpec::clearCrash() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void()>("clearCrash");
+    method(_javaPart);
   }
   std::shared_ptr<Promise<AnalyzeResult>> JHybridBoingPoseSpec::analyzeVideo(const std::string& path, const AnalyzeOptions& options, const std::function<void(double /* fraction */)>& onProgress) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jni::alias_ref<jni::JString> /* path */, jni::alias_ref<JAnalyzeOptions> /* options */, jni::alias_ref<JFunc_void_double::javaobject> /* onProgress */)>("analyzeVideo_cxx");

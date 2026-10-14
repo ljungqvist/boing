@@ -38,6 +38,14 @@ abstract class HybridBoingPoseSpec: HybridObject() {
   @Keep
   abstract fun videoInfo(path: String): VideoInfo
   
+  @DoNotStrip
+  @Keep
+  abstract fun lastCrash(): String
+  
+  @DoNotStrip
+  @Keep
+  abstract fun clearCrash(): Unit
+  
   abstract fun analyzeVideo(path: String, options: AnalyzeOptions, onProgress: (fraction: Double) -> Unit): Promise<AnalyzeResult>
   
   @DoNotStrip

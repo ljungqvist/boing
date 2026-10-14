@@ -209,6 +209,15 @@ namespace margelo::nitro::boingpose::bridge::swift {
     return Result<VideoInfo>::withError(error);
   }
   
+  // pragma MARK: Result<std::string>
+  using Result_std__string_ = Result<std::string>;
+  inline Result_std__string_ create_Result_std__string_(const std::string& value) noexcept {
+    return Result<std::string>::withValue(value);
+  }
+  inline Result_std__string_ create_Result_std__string_(const std::exception_ptr& error) noexcept {
+    return Result<std::string>::withError(error);
+  }
+  
   // pragma MARK: Result<std::shared_ptr<Promise<AnalyzeResult>>>
   using Result_std__shared_ptr_Promise_AnalyzeResult___ = Result<std::shared_ptr<Promise<AnalyzeResult>>>;
   inline Result_std__shared_ptr_Promise_AnalyzeResult___ create_Result_std__shared_ptr_Promise_AnalyzeResult___(const std::shared_ptr<Promise<AnalyzeResult>>& value) noexcept {

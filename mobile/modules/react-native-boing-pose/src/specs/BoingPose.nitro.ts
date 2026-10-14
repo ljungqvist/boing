@@ -67,6 +67,12 @@ export interface BoingPose
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   createDetector(modelPath: string, preferGpu: boolean): PoseDetector
   videoInfo(path: string): VideoInfo
+  /**
+   * The report of the last crash (stack trace, time, device), or "" when there was none.
+   * Android: uncaught exceptions on any thread are recorded; native signals (SIGSEGV) are not.
+   */
+  lastCrash(): string
+  clearCrash(): void
   /** Decodes a video file and runs pose on the frames in [from, to] with their own timestamps. */
   analyzeVideo(
     path: string,

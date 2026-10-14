@@ -16,6 +16,8 @@ namespace margelo::nitro::boingpose {
     registerHybrids(this, [](Prototype& prototype) {
       prototype.registerHybridMethod("createDetector", &HybridBoingPoseSpec::createDetector);
       prototype.registerHybridMethod("videoInfo", &HybridBoingPoseSpec::videoInfo);
+      prototype.registerHybridMethod("lastCrash", &HybridBoingPoseSpec::lastCrash);
+      prototype.registerHybridMethod("clearCrash", &HybridBoingPoseSpec::clearCrash);
       prototype.registerHybridMethod("analyzeVideo", &HybridBoingPoseSpec::analyzeVideo);
     });
   }

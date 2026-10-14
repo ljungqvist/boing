@@ -15,6 +15,8 @@ public protocol HybridBoingPoseSpec_protocol: HybridObject {
   // Methods
   func createDetector(modelPath: String, preferGpu: Bool) throws -> (any HybridPoseDetectorSpec)
   func videoInfo(path: String) throws -> VideoInfo
+  func lastCrash() throws -> String
+  func clearCrash() throws -> Void
   func analyzeVideo(path: String, options: AnalyzeOptions, onProgress: @escaping (_ fraction: Double) -> Void) throws -> Promise<AnalyzeResult>
 }
 

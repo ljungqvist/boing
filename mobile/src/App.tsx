@@ -3,7 +3,7 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
@@ -38,7 +38,7 @@ function Main() {
   const insets = useSafeAreaInsets();
   const permission = useCameraPermission();
   const [mode, setMode] = useState<Mode>("idle");
-  const [facing, setFacing] = useState<"front" | "back">("back");
+  const [facing, setFacing] = useState<"front" | "back">("front");
   const [status, setStatus] = useState<Status>({ text: "Press Start", tone: "idle" });
   const [results, setResults] = useState<Measured[]>([]);
   const [ignored, setIgnored] = useState<string[]>([]);
@@ -47,6 +47,14 @@ function Main() {
   const [details, setDetails] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [info, setInfo] = useState<CameraInfo | null>(null);
+  /** The report of a crash in the previous run (shown once, then cleared). */
+  const [crash, setCrash] = useState(() => {
+    try {
+      return boingPose.lastCrash();
+    } catch {
+      return "";
+    }
+  });
   /** How each live jump was measured (newest first), for the menu's diagnostics. */
   const [logs, setLogs] = useState<Record<string, unknown>[]>([]);
   const [session, setSession] = useState(0); // remounts the camera on Start/flip
@@ -305,6 +313,21 @@ function Main() {
       {details !== null && results[details] && (
         <JumpDetails m={results[details]} index={details} count={results.length} onClose={() => setDetails(null)} />
       )}
+      {crash !== "" && (
+        <Sheet
+          title="Boing crashed last time"
+          onClose={() => {
+            boingPose.clearCrash();
+            setCrash("");
+          }}
+        >
+          <Text style={s.hint}>Please share this report so the problem can be fixed.</Text>
+          <Pressable style={s.wide} onPress={() => void Share.share({ message: crash })}>
+            <Text style={s.wideText}>Share report</Text>
+          </Pressable>
+          <Text selectable style={s.trace}>{crash}</Text>
+        </Sheet>
+      )}
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
@@ -407,4 +430,7 @@ const s = StyleSheet.create({
   sectionTitle: { color: C.text, fontWeight: "600", marginTop: 16, marginBottom: 4 },
   hint: { color: C.muted, fontSize: 13, marginTop: 12, lineHeight: 19 },
   diag: { color: C.muted, fontSize: 12, marginTop: 6, fontVariant: ["tabular-nums"] },
+  wide: { marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: C.accent, alignItems: "center" },
+  wideText: { color: "#1f0d00", fontWeight: "700", fontSize: 15 },
+  trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
 });

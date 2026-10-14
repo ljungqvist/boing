@@ -40,6 +40,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
+  const [rotation, setRotation] = useState(0);
   const model = useRef<string | null>(null);
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
   const eventsRef = useRef(events);
@@ -158,10 +159,11 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         outputs={outputs}
         constraints={constraints}
         onSessionConfigSelected={onConfig}
+        onUIRotationChanged={setRotation}
         onError={onError}
         resizeMode="contain"
       />
-      <Skeleton feed={feed} />
+      <Skeleton feed={feed} rotation={rotation} />
     </>
   );
 }

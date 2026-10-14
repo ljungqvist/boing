@@ -64,6 +64,8 @@ namespace margelo::nitro::boingpose {
       // Methods
       virtual std::shared_ptr<HybridPoseDetectorSpec> createDetector(const std::string& modelPath, bool preferGpu) = 0;
       virtual VideoInfo videoInfo(const std::string& path) = 0;
+      virtual std::string lastCrash() = 0;
+      virtual void clearCrash() = 0;
       virtual std::shared_ptr<Promise<AnalyzeResult>> analyzeVideo(const std::string& path, const AnalyzeOptions& options, const std::function<void(double /* fraction */)>& onProgress) = 0;
 
     protected:
