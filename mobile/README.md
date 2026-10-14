@@ -51,9 +51,13 @@ npm run typecheck           # (mobile/)
 scripts/analyze-on-device.sh <video.mp4>   # analyse a file with the installed app (adb), prints JSON
 ```
 
-`analyze-on-device.sh` uses the app's `boing://analyze?path=…` link (a file in the app's external files
-folder) and reads the result from the log (`BOING_FILE …`). Live jumps log `BOING_LIVE` and
-`BOING_LOG` lines.
+`analyze-on-device.sh` serves the video from this computer over `adb reverse`, opens the app's
+`boing://analyze?url=http://localhost:8765/…` link (the app downloads and analyses it) and reads the
+result from the log (`BOING_FILE …`). Live jumps log `BOING_LIVE` and `BOING_LOG` lines.
+Results against the web app: `../docs/evaluation/2026-10-14-native-app.md`.
+
+On an Apple-silicon Mac, use an Android 13 emulator image with `-gpu host`: newer images advertise
+CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path crashes (SIGILL).
 
 ## Native module
 
