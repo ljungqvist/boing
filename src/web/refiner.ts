@@ -30,7 +30,7 @@ export interface Refined {
   /** Pose model used. */
   model: string;
 }
-export type RefineResult = Refined | { error: string; ms: number; flags?: JumpFlag[] };
+export type RefineResult = Refined | { error: string; ms: number; flags?: JumpFlag[]; rejected?: Jump };
 
 export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent", "poor-fit"];
 /** Rejections about the movement itself: the live result of the same movement isn't shown instead. */
@@ -105,7 +105,7 @@ export class Refiner {
         .sort((a, b) => Math.abs(a.tOff - target) - Math.abs(b.tOff - target));
       const jump = near[0];
       if (!jump) return { error: "no-match", ms: ms() };
-      if (jump.flags.some((f) => REJECT.includes(f))) return { error: "rejected", ms: ms(), flags: jump.flags };
+      if (jump.flags.some((f) => REJECT.includes(f))) return { error: "rejected", ms: ms(), flags: jump.flags, rejected: jump };
       return { jump, frames, size, fps, ms: ms(), offset: jump.tOff - target, decoder, model: p.kind };
     } catch (e) {
       if (outer?.aborted) return { error: "cancelled", ms: ms() };

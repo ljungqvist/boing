@@ -204,14 +204,21 @@ export class LiveController {
   /** Measures a finished clip's jumps (one at a time), then deletes it. */
   private async measure(c: OpenClip, path: string | null) {
     const job = this.queue.then(async () => {
-      for (const j of c.jumps) {
-        const { measured, log } = await this.refine(j, c, path);
-        // Not pending any more when the result arrives (the app clears "Measuring…" at zero).
-        this.pending--;
-        this.events.log?.(log);
-        this.events.result(measured);
+      let done = 0;
+      try {
+        for (const j of c.jumps) {
+          const { measured, log } = await this.refine(j, c, path);
+          // Not pending any more when the result arrives (the app clears "Measuring…" at zero).
+          this.pending--;
+          done++;
+          this.events.log?.(log);
+          this.events.result(measured);
+        }
+      } finally {
+        // Even if a result handler throws: nothing stays pending, the clip is deleted.
+        this.pending -= c.jumps.length - done;
+        if (path) this.deps.deleteClip(path);
       }
-      if (path) this.deps.deleteClip(path);
     });
     this.queue = job.catch(() => {});
     await job;
