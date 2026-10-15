@@ -12,3 +12,16 @@ export const TABLE_TRUTH: Record<string, { off: number; on: number }> = {
   "VisionCamera_4255918837353869564.mp4": { off: 6.541, on: 6.975 },
   "VisionCamera_1901460937979112645.mp4": { off: 3.075, on: 3.392 },
 };
+
+/**
+ * Native-app floor session 2026-10-15 (phone on the floor leaning back 18°, front camera, 60 fps,
+ * barefoot): marked the same way. 6501 was rejected by the app (out of view); its truth is kept.
+ */
+export const FLOOR_TRUTH: Record<string, { off: number; on: number }> = {
+  "VisionCamera_577077169869515521.mp4": { off: 7.858, on: 8.275 },
+  "VisionCamera_5931249020898260113.mp4": { off: 5.058, on: 5.491 },
+  "VisionCamera_8497524966434495682.mp4": { off: 4.208, on: 4.641 },
+  "VisionCamera_5587491634124200328.mp4": { off: 12.340, on: 12.757 },
+  "VisionCamera_5827433014185243455.mp4": { off: 8.591, on: 9.024 },
+  "VisionCamera_6501339074568151020.mp4": { off: 1.341, on: 1.758 },
+};
