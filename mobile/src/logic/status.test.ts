@@ -19,6 +19,10 @@ describe("liveStatus", () => {
     expect(liveStatus(standing(10), person(), 30, true)).toEqual({ text: "Ready", tone: "ready" });
   });
 
+  it("asks to step back when the feet are below the picture", () => {
+    expect(liveStatus(standing(10), person(1.03), 30, true).text).toMatch(/Feet not visible · step back/);
+  });
+
   it("shows when the person is in the air", () => {
     expect(liveStatus(standing(30), person(0.8), 30, true).tone).toBe("air");
   });

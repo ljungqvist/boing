@@ -13,7 +13,9 @@ export type JumpFlag =
   | "not-parabola"    // hip isn't decelerating during "flight"
   | "poor-fit"        // large residuals: tucked legs, bad keypoints
   | "disagree"        // takeoff→apex and flight-time heights differ: bent-knee landing?
-  | "camera-moved";   // floor line differs before and after the jump
+  | "camera-moved"    // floor line differs before and after the jump
+  | "out-of-view"     // hips or feet left the picture, or the person was lost in the flight: too close?
+  | "inconsistent";   // takeoff→apex and flight-time heights too far apart to be one flight
 
 export interface Jump {
   tOff: number;
@@ -28,12 +30,22 @@ export interface Jump {
   hipRmsRel: number;
   toeRmsRel: number;
   floorShiftRel: number;
+  /** Fraction of the airborne run without hip or toe points. */
+  lostRel: number;
+  /** Furthest the hips or feet lay outside the picture around the jump (fraction of the frame). */
+  outsideRel: number;
   flags: JumpFlag[];
   /** Details for plotting/debugging. */
   debug: { i0: number; i1: number; floor: number; bodyPx: number; hipFit: Quadratic; toeFit: Quadratic };
 }
 
 const NOSE_TO_HEEL_PER_STATURE = 0.92;
+/** Hips or feet this far outside the picture (fraction of the frame) make a jump unmeasurable. */
+const MAX_OUTSIDE = 0.03;
+/** Most of the airborne run that may lack hip or toe points. */
+const MAX_LOST = 0.2;
+/** Takeoff→apex and flight-time heights further apart than this factor aren't one flight. */
+const MAX_HEIGHT_RATIO = 2;
 
 export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
   const g = opts.g ?? 9.81;
@@ -97,6 +109,9 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
       hipRmsRel: hipFit.rms / bodyPx,
       toeRmsRel: toeFit.rms / bodyPx,
       floorShiftRel: Math.abs(floorAfter - floorBefore) / bodyPx,
+      lostRel: range(i0, i1).filter((i) => !Number.isFinite(s.toe[i]) || !Number.isFinite(s.hip[i])).length / (i1 - i0 + 1),
+      // Around the flight and the floor windows before and after it.
+      outsideRel: s.outside ? windowMax(s.t, s.outside, t0 - 0.6, t1 + 0.6) : 0,
       flags: [],
       debug: { i0, i1, floor: floorBefore, bodyPx, hipFit, toeFit },
     };
@@ -108,6 +123,8 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     if (Math.max(j.hipRmsRel, j.toeRmsRel) > 0.015) j.flags.push("poor-fit");
     if (Math.abs(hPrimary - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
     if (j.floorShiftRel > 0.02) j.flags.push("camera-moved");
+    if (j.lostRel > MAX_LOST || j.outsideRel > MAX_OUTSIDE) j.flags.push("out-of-view");
+    if (!(Math.max(hPrimary, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hPrimary, hFlight))) j.flags.push("inconsistent");
     jumps.push(j);
   }
   return jumps;
@@ -192,6 +209,12 @@ function rollingPercentile(t: number[], y: number[], halfWidth: number, p: numbe
     out.push(w.length ? w[Math.floor(p * (w.length - 1))] : NaN);
   }
   return out;
+}
+
+function windowMax(t: number[], y: number[], from: number, to: number): number {
+  let m = 0;
+  for (let i = 0; i < t.length; i++) if (t[i] >= from && t[i] <= to && Number.isFinite(y[i])) m = Math.max(m, y[i]);
+  return m;
 }
 
 function windowMedian(t: number[], y: number[], from: number, to: number): number | null {

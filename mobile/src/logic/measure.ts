@@ -5,12 +5,14 @@ import type { PoseFrame } from "../../../src/analysis/types";
 import type { Size } from "./pose";
 
 /** Flags that mean "not a jump we can measure": such movements are listed as ignored. */
-export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible"];
+export const REJECT: JumpFlag[] = ["not-parabola", "few-frames", "g-implausible", "out-of-view", "inconsistent"];
 
 export const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "not-parabola": "no free-fall curve",
   "few-frames": "too short",
   "g-implausible": "speed doesn't match gravity",
+  "out-of-view": "not fully in view",
+  "inconsistent": "inconsistent flight",
 };
 
 /**

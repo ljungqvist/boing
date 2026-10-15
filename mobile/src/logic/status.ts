@@ -30,7 +30,9 @@ export function airborne(history: PoseFrame[], lm: Landmark[] | null): boolean {
  * `fps` is the live analysis rate, `warm` whether the analysis has run long enough to judge it.
  */
 export function liveStatus(history: PoseFrame[], lm: Landmark[] | null, fps: number, warm: boolean): Status {
-  const visible = (idx: number[]) => !!lm && idx.every((i) => lm[i][3] > 0.5);
+  // Points outside the picture are guesses, even with a high visibility score.
+  const inside = ([x, y]: Landmark) => x >= 0 && x <= 1 && y >= 0 && y <= 1;
+  const visible = (idx: number[]) => !!lm && idx.every((i) => lm[i][3] > 0.5 && inside(lm[i]));
   if (!lm) return { text: "Looking for you…", tone: "idle" };
   if (!visible(TOES)) return { text: "Feet not visible · step back", tone: "adjust" };
   if (!visible(HIPS)) return { text: "Hips not visible · step back", tone: "adjust" };

@@ -80,5 +80,33 @@ describe("findJumps on synthetic CMJs", () => {
     for (let i = 0; i < s.t.length; i += 9) { s.toe[i] = NaN; s.hip[i] = NaN; }
     const [j] = findJumps(s);
     expect(Math.abs(j.hPrimary - 0.3)).toBeLessThan(0.01);
+    expect(j.flags).toEqual([]);
+  });
+
+  it("flags a jump where the person was lost in much of the flight", () => {
+    // Standing too close: the pose model loses the person around the apex.
+    const s = syntheticSignals({ fps: 60, noise: 0.003 });
+    s.t.forEach((t, i) => { if (t > 2.1 && t < 2.3) { s.toe[i] = NaN; s.hip[i] = NaN; } });
+    const [j] = findJumps(s);
+    expect(j.flags).toContain("out-of-view");
+  });
+
+  it("flags hips or feet outside the picture around the jump", () => {
+    const s = syntheticSignals({ fps: 60, noise: 0.003 });
+    s.outside = s.t.map((t) => (t > 2.15 && t < 2.3 ? 0.08 : 0));
+    expect(findJumps(s)[0].flags).toContain("out-of-view");
+    // Touching the edge is fine.
+    s.outside = s.t.map((t) => (t > 2.15 && t < 2.3 ? 0.01 : 0));
+    expect(findJumps(s)[0].flags).toEqual([]);
+  });
+
+  it("flags takeoff→apex and flight-time heights that can't be the same flight", () => {
+    // The hip apex 0.15 s late relative to the feet: ≈ 0.75 m vs 0.3 m.
+    const s = syntheticSignals({ fps: 60, noise: 0.003 });
+    const lag = 9;
+    s.hip = s.hip.map((_, i) => s.hip[Math.max(0, i - lag)]);
+    const [j] = findJumps(s);
+    expect(j.hPrimary / j.hFlight).toBeGreaterThan(2);
+    expect(j.flags).toContain("inconsistent");
   });
 });

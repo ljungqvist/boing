@@ -17,6 +17,8 @@ const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "not-parabola": "no free-fall curve",
   "few-frames": "too short",
   "g-implausible": "speed doesn't match gravity",
+  "out-of-view": "not fully in view",
+  "inconsistent": "inconsistent flight",
 };
 /**
  * Notes shown with a result. Only about the setup, never about how to jump:
