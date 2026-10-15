@@ -1,19 +1,18 @@
-// Allows plain HTTP to localhost only, for scripts/analyze-on-device.sh (adb reverse serves a
-// test video from the computer). Everything else stays HTTPS-only.
+// Allows plain HTTP: to localhost for scripts/analyze-on-device.sh (adb reverse serves a test video
+// from the computer), and to a computer on the local network for sending debug recordings
+// (tools/devserver.py). Android can't limit cleartext to private addresses, so it's allowed in general;
+// the app itself only fetches pose models, over HTTPS.
 const { AndroidConfig, withAndroidManifest, withDangerousMod } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
 
 const XML = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-  <domain-config cleartextTrafficPermitted="true">
-    <domain includeSubdomains="false">localhost</domain>
-    <domain includeSubdomains="false">127.0.0.1</domain>
-  </domain-config>
+  <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
 `;
 
-module.exports = function withLocalhostCleartext(config) {
+module.exports = function withLanCleartext(config) {
   config = withDangerousMod(config, [
     "android",
     async (c) => {

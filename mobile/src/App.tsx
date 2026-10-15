@@ -3,16 +3,17 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
-import { describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
+import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
+import { deleteSessions, keptSummary, loadSettings, newSessionId, saveSettings, sendSessions, writeSession } from "./native/debug";
 import { announce } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
@@ -67,6 +68,20 @@ function Main() {
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const run = useRef(0); // cancels a file analysis when something else starts
+  // Debug: keep the clips of measured jumps with the session's data, and send them to a computer.
+  const [settings, setSettings] = useState(() => loadSettings());
+  const keep = settings.keep === true;
+  const server = typeof settings.server === "string" ? settings.server : "http://192.168.86.18:8765";
+  const updateSettings = (patch: Record<string, unknown>) =>
+    setSettings((old) => {
+      const next = { ...old, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  const [debugSession, setDebugSession] = useState<string | null>(null);
+  const keptClips = useRef<string[]>([]);
+  const [kept, setKept] = useState(() => keptSummary());
+  const [sendStatus, setSendStatus] = useState("");
 
   const showFlash = useCallback((f: Flash, ms = FLASH_MS) => {
     clearTimeout(flashTimer.current);
@@ -105,8 +120,15 @@ function Main() {
       addResult(m, true);
     },
     log: (e) => {
-      console.log(`BOING_LOG ${JSON.stringify(e)}`);
-      setLogs((xs) => [e, ...xs].slice(0, 50));
+      console.log(`BOING_LOG ${JSON.stringify({ ...e, pose: undefined, motion: undefined })}`);
+      setLogs((xs) => {
+        const next = [e, ...xs].slice(0, 50);
+        if (debugSession) {
+          writeSession(debugSession, debugPackage(deviceContext(facing, lastInfo.current), next, keptClips.current));
+          setKept(keptSummary());
+        }
+        return next;
+      });
     },
   };
 
@@ -124,11 +146,13 @@ function Main() {
       return;
     }
     clear();
+    keptClips.current = [];
+    setDebugSession(keep ? newSessionId() : null);
     setSession((n) => n + 1);
     setMode("live");
     setStatus({ text: "Starting the camera…", tone: "idle" });
     void activateKeepAwakeAsync().catch(() => {});
-  }, [permission, clear]);
+  }, [permission, clear, keep]);
 
   const fail = useCallback((e: unknown) => {
     console.warn(e);
@@ -224,6 +248,11 @@ function Main() {
             onStep={(text) => setStatus({ text, tone: "idle" })}
             onError={fail}
             onInfo={setInfo}
+            debugSession={debugSession}
+            onKeptClip={(name) => {
+              keptClips.current.push(name);
+              setKept(keptSummary());
+            }}
           />
         )}
         {!live && results.length === 0 && mode !== "file" && (
@@ -354,6 +383,52 @@ function Main() {
               ))}
             </>
           )}
+          <Text style={s.sectionTitle}>Debug recordings</Text>
+          <Pressable style={s.wide} onPress={() => updateSettings({ keep: !keep })}>
+            <Text style={s.wideText}>Keep recordings of measured jumps: {keep ? "on" : "off"}</Text>
+          </Pressable>
+          <Text style={s.hint}>
+            {keep ? "From the next Start, each measured jump's video, pose and motion data stay on the phone. " : ""}
+            Kept: {kept.files} file{kept.files === 1 ? "" : "s"} in {kept.sessions} session{kept.sessions === 1 ? "" : "s"}, {kept.mb} MB.
+          </Text>
+          {kept.files > 0 && (
+            <>
+              <TextInput
+                style={s.input}
+                value={server}
+                onChangeText={(v) => updateSettings({ server: v.trim() })}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="http://computer:8765"
+                placeholderTextColor={C.muted}
+              />
+              <Pressable
+                style={s.wide}
+                disabled={sendStatus.startsWith("Sending")}
+                onPress={() => {
+                  setSendStatus("Sending…");
+                  sendSessions(server, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
+                    .then((n) => setSendStatus(`Sent ${n} file${n === 1 ? "" : "s"}; removed from the phone.`))
+                    .catch((e) => setSendStatus(`Couldn't send: ${String((e as Error)?.message ?? e)}`))
+                    .finally(() => setKept(keptSummary()));
+                }}
+              >
+                <Text style={s.wideText}>Move to computer</Text>
+              </Pressable>
+              <Pressable
+                style={s.wide}
+                onPress={() => {
+                  deleteSessions();
+                  setKept(keptSummary());
+                  setSendStatus("");
+                }}
+              >
+                <Text style={s.wideText}>Delete kept recordings</Text>
+              </Pressable>
+            </>
+          )}
+          {sendStatus !== "" && <Text style={s.hint}>{sendStatus}</Text>}
           {ignored.length > 0 && (
             <>
               <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
@@ -377,15 +452,7 @@ function Main() {
 
 /** Shares the diagnostics as text (e.g. to a chat or e-mail); `pose`: the re-measured jumps' pose data instead. */
 async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[], pose = false) {
-  const c = Platform.constants as Record<string, unknown>;
-  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || Platform.OS;
-  const context = {
-    time: new Date().toISOString(),
-    device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,
-    camera: facing,
-    "camera frame rate": info?.fps ? `${Math.round(info.fps)} fps` : "–",
-    "pose delegate": info?.delegate || "–",
-  };
+  const context = deviceContext(facing, info);
   await Share.share({ message: pose ? poseReport(context, logs) : diagnosticsReport(context, logs) }).catch(() => {});
 }
 
@@ -444,7 +511,21 @@ const s = StyleSheet.create({
   sectionTitle: { color: C.text, fontWeight: "600", marginTop: 16, marginBottom: 4 },
   hint: { color: C.muted, fontSize: 13, marginTop: 12, lineHeight: 19 },
   diag: { color: C.muted, fontSize: 12, marginTop: 6, fontVariant: ["tabular-nums"] },
+  input: { marginTop: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.muted, color: C.text, fontSize: 15 },
   wide: { marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: C.accent, alignItems: "center" },
   wideText: { color: "#1f0d00", fontWeight: "700", fontSize: 15 },
   trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
 });
+
+/** Phone, camera and time, at the top of diagnostics and debug packages. */
+function deviceContext(facing: string, info: CameraInfo | null): Record<string, unknown> {
+  const c = Platform.constants as Record<string, unknown>;
+  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || Platform.OS;
+  return {
+    time: new Date().toISOString(),
+    device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,
+    camera: facing,
+    "camera frame rate": info?.fps ? `${Math.round(info.fps)} fps` : "–",
+    "pose delegate": info?.delegate || "–",
+  };
+}
