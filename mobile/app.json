@@ -41,7 +41,7 @@
           }
         }
       ],
-      "./plugins/withLocalhostCleartext",
+      "./plugins/withLanCleartext",
       "./plugins/withSensorPortrait"
     ]
   }

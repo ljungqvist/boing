@@ -9,9 +9,12 @@ import {
   useFrameOutput,
   useVideoOutput,
 } from "react-native-vision-camera";
+import { Accelerometer, Gyroscope } from "expo-sensors";
 import { scheduleOnRN } from "react-native-worklets";
 import { bestFps } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
+import { SampleBuffer } from "../logic/motion";
+import { keepClip } from "../native/debug";
 import { fromDetect, toFrames } from "../logic/pose";
 import { deleteQuietly, modelPath, toPath } from "../native/models";
 import { PoseFeed, Skeleton } from "./Skeleton";
@@ -32,10 +35,17 @@ interface Props {
   onInfo: (info: CameraInfo) => void;
   /** Receives the controller while the camera runs (null when it stops). */
   controllerRef: React.MutableRefObject<LiveController | null>;
+  /** Debug session to keep the clips of measured jumps in, or null to delete them. */
+  debugSession: string | null;
+  /** A clip was kept (its file name). */
+  onKeptClip?: (name: string) => void;
 }
 
+/** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
+const SENSOR_MS = 10;
+
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, debugSession, onKeptClip }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -46,6 +56,21 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
   const eventsRef = useRef(events);
   eventsRef.current = events;
+  const debugRef = useRef({ debugSession, onKeptClip });
+  debugRef.current = { debugSession, onKeptClip };
+
+  // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
+  const acc = useMemo(() => new SampleBuffer(60), []);
+  const gyro = useMemo(() => new SampleBuffer(60), []);
+  useEffect(() => {
+    Accelerometer.setUpdateInterval(SENSOR_MS);
+    Gyroscope.setUpdateInterval(SENSOR_MS);
+    const subs = [
+      Accelerometer.addListener((e) => acc.add([e.timestamp, e.x, e.y, e.z])),
+      Gyroscope.addListener((e) => gyro.add([e.timestamp, e.x, e.y, e.z])),
+    ];
+    return () => subs.forEach((x) => x.remove());
+  }, [acc, gyro]);
 
   // Pose model (downloaded on first use) and the live detector.
   useEffect(() => {
@@ -107,9 +132,13 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
           return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
         },
-        deleteClip(path) {
-          deleteQuietly(path);
+        deleteClip(path, hasJumps) {
+          const { debugSession: id, onKeptClip: kept } = debugRef.current;
+          const name = id && hasJumps ? keepClip(path, id) : null;
+          if (name) kept?.(name);
+          else deleteQuietly(path);
         },
+        motion: (from, to) => ({ acc: acc.window(from, to), gyro: gyro.window(from, to) }),
       },
       {
         status: (s) => eventsRef.current.status(s),
@@ -120,7 +149,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       // The heavy model takes several seconds per jump on a mid-range phone.
       { timeoutMs: 60_000 },
     );
-  }, [detector, videoOutput]);
+  }, [detector, videoOutput, acc, gyro]);
 
   useEffect(() => {
     controllerRef.current = controller;

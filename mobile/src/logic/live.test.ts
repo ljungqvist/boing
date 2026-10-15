@@ -20,7 +20,7 @@ function setup(opts: {
   const scene = syntheticFrames({ fps: 240, duration: 14, jumps, seed: 5 });
   const size = { width: scene.width, height: scene.height };
   let now = 0;
-  const clips: { start: number; stopped: boolean; deleted: boolean }[] = [];
+  const clips: { start: number; stopped: boolean; deleted: boolean; hasJumps?: boolean }[] = [];
   const analysed: { from: number; to: number }[] = [];
   const deps: LiveDeps = {
     async startClip() {
@@ -42,10 +42,15 @@ function setup(opts: {
         .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: drifted(f, takeoff) }));
       return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 } };
     },
-    deleteClip(path) {
+    deleteClip(path, hasJumps) {
       const c = clips.find((x) => `clip@${x.start}` === path);
-      if (c) c.deleted = true;
+      if (c) Object.assign(c, { deleted: true, hasJumps });
     },
+    // A still phone leaning back 30°, read at 100 Hz.
+    motion: (from, to) => ({
+      acc: Array.from({ length: Math.round((to - from) * 100) }, (_, i) => [from + i / 100, 0, Math.cos(Math.PI / 6), 0.5] as [number, number, number, number]),
+      gyro: [],
+    }),
   };
   // 300 px per metre in syntheticFrames.
   const drifted = (f: PoseFrame, takeoff: number) => {
@@ -93,6 +98,10 @@ describe("LiveController", () => {
     const pose = s.logs.filter((e) => e.pose).map((e) => e.pose as { frames: unknown[] });
     expect(pose).toHaveLength(2);
     expect(pose.every((p) => p.frames.length > 100)).toBe(true);
+    // With the phone's tilt, and the clip it came from (kept when debugging).
+    const measured = s.logs.filter((e) => e.pose);
+    expect(measured.every((e) => (e.motion as { tiltDeg: number }).tiltDeg === 30 && typeof e.clip === "string")).toBe(true);
+    expect(s.clips.filter((c) => c.hasJumps)).toHaveLength(2);
     // Every clip is stopped and deleted in the end.
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
     // Only the stretch around each jump is analysed.

@@ -4,6 +4,7 @@ import type { PoseFrame } from "../../../src/analysis/types";
 import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
 import type { Size } from "./pose";
 import { compactPose } from "./diagnostics";
+import { motionSummary, type Sample } from "./motion";
 import { liveStatus, type Status } from "./status";
 import type { Measured } from "./video";
 
@@ -21,7 +22,10 @@ export interface LiveDeps {
    * facts about the recorded file (size, rotation, frame rate) for the diagnostics.
    */
   analyzeClip(path: string, from: number, to: number): Promise<{ frames: PoseFrame[]; size: Size; video?: Record<string, unknown> }>;
-  deleteClip(path: string): void;
+  /** Deletes a finished clip (`hasJumps`: it was measured; a debug setting may keep those). */
+  deleteClip(path: string, hasJumps?: boolean): void;
+  /** Motion-sensor samples between two times on the frame clock, if the phone's sensors are read. */
+  motion?(from: number, to: number): { acc: Sample[]; gyro: Sample[] };
 }
 
 export interface LiveEvents {
@@ -161,7 +165,7 @@ export class LiveController {
     try {
       const clip = await this.deps.startClip();
       if (this.stopped) {
-        this.deps.deleteClip(await clip.stop());
+        this.deps.deleteClip(await clip.stop(), false);
         return;
       }
       this.clip = { clip, start: this.lastT, jumps: [] };
@@ -218,7 +222,7 @@ export class LiveController {
       } finally {
         // Even if a result handler throws: nothing stays pending, the clip is deleted.
         this.pending -= c.jumps.length - done;
-        if (path) this.deps.deleteClip(path);
+        if (path) this.deps.deleteClip(path, c.jumps.length > 0);
       }
     });
     this.queue = job.catch(() => {});
@@ -232,6 +236,10 @@ export class LiveController {
       tOff: live.tOff, hLive: live.hPrimary, framesLive: live.airborneFrames, gLive: live.gImplied, flagsLive: live.flags,
       fpsLive: this.fps,
     };
+    // How the phone stood and whether it moved (debugging; logged with every re-measured jump).
+    const m = this.deps.motion?.(live.tOff - 1.5, live.tOn + 1);
+    if (m) log.motion = { ...motionSummary(m.acc, m.gyro, live.tOff, live.tOn), acc: m.acc, gyro: m.gyro };
+    if (path) Object.assign(log, { clip: path.split("/").pop(), clipStart: c.start });
     const fallback = () => {
       const m = this.liveMeasurement(live, size);
       m.approximate = accepted(live);
