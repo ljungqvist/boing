@@ -41,6 +41,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
   const model = useRef<string | null>(null);
+  /** Model for re-measuring jumps from the recording: heavy (steadier feet, see docs/evaluation). */
+  const measureModel = useRef<string | null>(null);
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
   const eventsRef = useRef(events);
   eventsRef.current = events;
@@ -58,6 +60,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         info.current = { ...info.current, delegate: det.delegate };
         onInfo(info.current);
         setDetector(det);
+        // In the background; until it's there (or if it can't be loaded), re-measure with the live model.
+        modelPath("heavy").then((h) => { if (alive) measureModel.current = h; }, () => {});
       })
       .catch((e) => alive && onError(e));
     return () => {
@@ -88,12 +92,20 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           };
         },
         async analyzeClip(path, from, to) {
-          const r = await boingPose.analyzeVideo(
-            path,
-            { modelPath: toPath(model.current!), from, to, minInterval: 0, preferGpu: true },
-            () => {},
-          );
-          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: clipFacts(path) };
+          const run = (m: string) =>
+            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: true }, () => {});
+          let heavy = measureModel.current;
+          let r;
+          try {
+            r = await run(heavy ?? model.current!);
+          } catch (e) {
+            if (!heavy) throw e;
+            // A heavy model that won't load (damaged download): stay with the live model from now on.
+            measureModel.current = heavy = null;
+            r = await run(model.current!);
+          }
+          const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
+          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
         },
         deleteClip(path) {
           deleteQuietly(path);
@@ -105,6 +117,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         result: (m) => eventsRef.current.result(m),
         log: (e) => eventsRef.current.log?.(e),
       },
+      // The heavy model takes several seconds per jump on a mid-range phone.
+      { timeoutMs: 60_000 },
     );
   }, [detector, videoOutput]);
 
