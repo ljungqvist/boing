@@ -7,7 +7,7 @@ import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
-import { describeLog, diagnosticsReport } from "./logic/diagnostics";
+import { describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
@@ -344,6 +344,11 @@ function Main() {
               <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
                 <Text style={s.wideText}>Share diagnostics</Text>
               </Pressable>
+              {logs.some((e) => e.pose) && (
+                <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs, true)}>
+                  <Text style={s.wideText}>Share pose data (latest 8 jumps)</Text>
+                </Pressable>
+              )}
               {logs.map((e, i) => (
                 <Text key={i} style={s.diag}>{describeLog(e)}</Text>
               ))}
@@ -370,8 +375,8 @@ function Main() {
   );
 }
 
-/** Shares the diagnostics as text (e.g. to a chat or e-mail). */
-async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[]) {
+/** Shares the diagnostics as text (e.g. to a chat or e-mail); `pose`: the re-measured jumps' pose data instead. */
+async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[], pose = false) {
   const c = Platform.constants as Record<string, unknown>;
   const device = [c.Brand, c.Model].filter(Boolean).join(" ") || Platform.OS;
   const context = {
@@ -381,7 +386,7 @@ async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: R
     "camera frame rate": info?.fps ? `${Math.round(info.fps)} fps` : "–",
     "pose delegate": info?.delegate || "–",
   };
-  await Share.share({ message: diagnosticsReport(context, logs) }).catch(() => {});
+  await Share.share({ message: pose ? poseReport(context, logs) : diagnosticsReport(context, logs) }).catch(() => {});
 }
 
 const pillStyle = (t: Tone) =>

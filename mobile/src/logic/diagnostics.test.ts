@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeLog, diagnosticsReport } from "./diagnostics";
+import { compactPose, describeLog, diagnosticsReport, POSE_POINTS, poseReport } from "./diagnostics";
 
 const rejected = {
   tOff: 1394416.04, hLive: 0.269, framesLive: 10, error: "rejected", ms: 11224,
@@ -42,5 +42,28 @@ describe("diagnosticsReport", () => {
     expect(lines).toContain("device: Samsung SM-S918B (android 15)");
     expect(lines).toContain(describeLog(rejected));
     expect(JSON.parse(lines[lines.length - 1])).toEqual([rejected]);
+  });
+});
+
+describe("pose data", () => {
+  const lm = Array.from({ length: 33 }, (_, i) => [i / 100, 0.5 + i / 1000, 0, 0.987654] as [number, number, number, number]);
+  const frames = [{ t: 100.5, lm }, { t: 100.5166666, lm: null }];
+  const pose = compactPose(frames, { width: 540, height: 960 });
+
+  it("keeps time, x, y and visibility of the points the analysis uses", () => {
+    expect(pose.t0).toBe(100.5);
+    const [f0, f1] = pose.frames as number[][];
+    expect(f0).toHaveLength(1 + 3 * POSE_POINTS.length);
+    expect(f0.slice(0, 4)).toEqual([0, 0, 0.5, 0.99]);
+    expect(f1).toEqual([0.0167]);
+  });
+
+  it("stays out of the readable diagnostics and goes into its own report", () => {
+    const entry = { ...rejected, pose };
+    expect(diagnosticsReport({}, [entry])).not.toContain("points");
+    const report = JSON.parse(poseReport({ device: "x" }, [entry, { tOff: 1, hLive: 0.2 }]));
+    expect(report).toMatchObject({ boing: "pose", version: 1, device: "x" });
+    expect(report.jumps).toHaveLength(1);
+    expect(report.jumps[0].pose.width).toBe(540);
   });
 });
