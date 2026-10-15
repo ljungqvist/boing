@@ -67,3 +67,19 @@ describe("pose data", () => {
     expect(report.jumps[0].pose.width).toBe(540);
   });
 });
+
+describe("motion", () => {
+  const motion = { tiltDeg: 31.6, rollDeg: 1, upsideDown: false, turnMaxDegS: 2.4, shakeMaxG: 0.031, acc: [[1, 0, 0.85, 0.52]], gyro: [] };
+  const entry = { tOff: 1, hLive: 0.3, framesLive: 9, h: 0.28, frames: 14, fps: 30, ms: 800, offset: 0.01, motion };
+
+  it("adds the phone's tilt and movement to the line", () => {
+    expect(describeLog(entry)).toBe(
+      "t 1.0 s · live 30.0 cm (9 fr) → 28.0 cm (14 fr, 30 fps, 800 ms, offset 0.01 s) · phone 32° back, turn ≤ 2°/s, shake 0.03 g",
+    );
+  });
+
+  it("keeps the summary but not the samples in the readable report", () => {
+    const raw = JSON.parse(diagnosticsReport({}, [entry]).split("\n").pop()!);
+    expect(raw[0].motion).toEqual({ tiltDeg: 31.6, rollDeg: 1, upsideDown: false, turnMaxDegS: 2.4, shakeMaxG: 0.031 });
+  });
+});
