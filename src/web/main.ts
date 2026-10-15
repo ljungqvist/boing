@@ -199,6 +199,11 @@ function addResult(
     const item = document.createElement("li");
     item.textContent = `at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm, g ${j.gImplied.toFixed(1)})`;
     ignoredEl.querySelector("ul")!.prepend(item);
+    // Done measuring, no height: say so (unless another jump is still being measured).
+    if (live && pending === 0) {
+      showFlashText("Couldn't measure", "failed");
+      feedback.announceFailure();
+    }
     return;
   }
   jumps.push({ jump: j, signals: toSignals({ ...size, fps, frames }), fps, how });
@@ -268,14 +273,12 @@ async function refineLive(
     // time), the live height isn't shown instead.
     const r = result.rejected ?? j;
     addResult({ ...r, tOff: j.tOff, tOn: j.tOn, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames });
-    if (pending === 0) flash.hidden = true; // it was "Measuring…"
     return;
   }
   console.warn("refinement failed, using the live result", result);
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   addResult(j, fps, frames, size, true,
     { refined: false, approximate: accepted, framesLive: j.airborneFrames, framesRefined: null });
-  if (!accepted && pending === 0) flash.hidden = true; // it was "Measuring…"
 }
 
 function renderSession() {
@@ -323,7 +326,7 @@ function showDetails(i: number) {
 /** The latest height in large type on top of the video, for a few seconds. */
 function showFlash(h: number, approximate = false) {
   flash.innerHTML = `${approximate ? "≈" : ""}${(h * 100).toFixed(1)}<small>cm</small>`;
-  flash.classList.remove("measuring");
+  flash.classList.remove("measuring", "failed");
   flash.hidden = false;
   flash.style.animation = "none";
   void flash.offsetWidth; // restart the pop-in animation
@@ -337,7 +340,21 @@ function showMeasuring() {
   clearTimeout(flashTimer);
   flash.textContent = "Measuring…";
   flash.classList.add("measuring");
+  flash.classList.remove("failed");
   flash.hidden = false;
+}
+
+/** A message in the flash's place for a few seconds (e.g. no height could be determined). */
+function showFlashText(text: string, cls: string) {
+  flash.textContent = text;
+  flash.classList.remove("measuring", "failed");
+  flash.classList.add(cls);
+  flash.hidden = false;
+  flash.style.animation = "none";
+  void flash.offsetWidth; // restart the pop-in animation
+  flash.style.animation = "";
+  clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => (flash.hidden = true), FLASH_MS);
 }
 
 /** Toes clearly above where they stood during the last two seconds. */
