@@ -73,6 +73,7 @@ button.icon:active, label.icon:active { background: rgba(255, 255, 255, 0.12); }
 #flash small { font-size: 0.35em; font-weight: 500; color: var(--muted); margin-left: 0.15em; }
 @keyframes pop { from { transform: translateX(-50%) scale(0.85); opacity: 0; } }
 #flash.measuring { font-size: clamp(1.6rem, 8vw, 3rem); font-weight: 600; color: var(--muted); padding: 0.4em 0.7em; }
+#flash.failed { font-size: clamp(1.6rem, 8vw, 3rem); font-weight: 700; padding: 0.4em 0.7em; }
 /* Decodes recorded pieces for refinement. Kept rendered (tiny, nearly transparent) so frame callbacks fire. */
 video.offscreen { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
 

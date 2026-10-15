@@ -14,7 +14,7 @@ import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
 import { deleteSessions, keptSummary, loadSettings, newSessionId, saveSettings, sendSessions, writeSession } from "./native/debug";
-import { announce } from "./native/feedback";
+import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
@@ -25,7 +25,7 @@ import { C } from "./ui/theme";
 const FLASH_MS = 5000;
 
 type Mode = "idle" | "live" | "file";
-type Flash = { text: string; measuring: boolean } | null;
+type Flash = { text: string; measuring: boolean; failed?: boolean } | null;
 
 export default function App() {
   return (
@@ -102,7 +102,11 @@ function Main() {
     if (!accepted(j)) {
       const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
       setIgnored((xs) => [`at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm)`, ...xs]);
-      if (live && controller.current?.pending === 0) setFlash((f) => (f?.measuring ? null : f));
+      // Done measuring, no height: say so (unless another jump is still being measured).
+      if (live && controller.current?.pending === 0) {
+        showFlash({ text: "Couldn't measure", measuring: false, failed: true });
+        announceFailure(soundRef.current);
+      }
       return;
     }
     setResults((xs) => [...xs, m]);
@@ -286,8 +290,8 @@ function Main() {
         {flash && (
           <View style={s.flashWrap} pointerEvents="none">
             <View style={s.flashBox}>
-              {flash.measuring ? (
-                <Text style={s.flashMeasuring}>{flash.text}</Text>
+              {flash.measuring || flash.failed ? (
+                <Text style={flash.failed ? s.flashFailed : s.flashMeasuring}>{flash.text}</Text>
               ) : (
                 <Text style={s.flash}>
                   {flash.text}
@@ -484,6 +488,7 @@ const s = StyleSheet.create({
   flash: { color: C.text, fontSize: 88, fontWeight: "800", fontVariant: ["tabular-nums"] },
   flashUnit: { fontSize: 28, fontWeight: "500", color: C.muted },
   flashMeasuring: { color: C.muted, fontSize: 36, fontWeight: "600", paddingVertical: 8 },
+  flashFailed: { color: C.text, fontSize: 36, fontWeight: "700", paddingVertical: 8, textAlign: "center" },
   bottom: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 12, backgroundColor: "rgba(0,0,0,0.35)" },
   session: {
     backgroundColor: C.surface, borderColor: C.line, borderWidth: 1, borderRadius: 16,
