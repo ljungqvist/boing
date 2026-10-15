@@ -3,6 +3,7 @@ import { JumpTracker } from "../../../src/analysis/tracker";
 import type { PoseFrame } from "../../../src/analysis/types";
 import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
 import type { Size } from "./pose";
+import { compactPose } from "./diagnostics";
 import { liveStatus, type Status } from "./status";
 import type { Measured } from "./video";
 
@@ -251,6 +252,8 @@ export class LiveController {
       const frames = r.frames.map((f) => ({ t: f.t + c.start, lm: f.lm }));
       const fps = frameRate(frames);
       Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video });
+      // For offline analysis (shared separately, see poseReport).
+      log.pose = compactPose(frames, r.size);
       const found = jumpsIn(frames, r.size);
       const jump = closestJump(found, live.tOff);
       if (!jump) {

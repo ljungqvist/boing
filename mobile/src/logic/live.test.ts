@@ -89,6 +89,10 @@ describe("LiveController", () => {
     expect(ok[0].jump.hFlight).toBeCloseTo(0.3, 1);
     expect(ok[1].jump.hFlight).toBeCloseTo(0.22, 1);
     expect(s.measuring()).toBe(2);
+    // The analysed frames go into the log, for offline analysis.
+    const pose = s.logs.filter((e) => e.pose).map((e) => e.pose as { frames: unknown[] });
+    expect(pose).toHaveLength(2);
+    expect(pose.every((p) => p.frames.length > 100)).toBe(true);
     // Every clip is stopped and deleted in the end.
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
     // Only the stretch around each jump is analysed.
