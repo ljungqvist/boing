@@ -28,7 +28,7 @@ for p in plans.split(","):
     for ph in (range(int(every)) if phases == "all" else [int(x) for x in phases.split("/")]):
         for m in models:
             configs.append((m, int(every), ph))
-model_dir = os.path.join(os.path.dirname(os.path.abspath(video)), "..", "models")
+model_dir = os.environ.get("BOING_MODELS") or os.path.join(os.path.dirname(os.path.abspath(video)), "..", "models")
 os.makedirs(out_dir, exist_ok=True)
 
 cap = cv2.VideoCapture(video)
