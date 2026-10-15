@@ -11,6 +11,10 @@ export const TRUTH_020914 = {
   tOff: [7.325, 12.421, 17.661, 25.089, 31.239, 38.076, 46.484],
   flightMs: [342, 392, 367, 397, 362, 378, 368],
 };
+/** Hand-marked from feet crops (2026-10-15 review), ±1 frame at 120 fps. */
+export const TRUTH_174441 = { tOff: [2.606, 6.030], flightMs: [429, 408] };
+/** Truth and source frame rate of a simulation directory (by its name). */
+const truthOf = (dir: string) => (dir.includes("174441") ? { truth: TRUTH_174441, base: 120 } : { truth: TRUTH_020914, base: 240 });
 
 export type Finder = (frames: { t: number; lm: any }[], size: { width: number; height: number }) => Jump[];
 export const defaultFinder: Finder = (frames, size) => findJumps(toSignals({ ...size, fps: 0, frames }));
@@ -25,15 +29,16 @@ export function evaluate(dir: string, finder: Finder = defaultFinder): Row[] {
     if (!m) continue;
     const data = JSON.parse(readFileSync(`${dir}/${f}`, "utf8"));
     const size = { width: data.width, height: data.height };
+    const { truth, base } = truthOf(dir);
     data.windows.forEach((w: any, k: number) => {
-      const t1 = TRUTH_020914.tOff[k], t2 = t1 + TRUTH_020914.flightMs[k] / 1000;
+      const t1 = truth.tOff[k], t2 = t1 + truth.flightMs[k] / 1000;
       const hTruth = 9.81 * (t2 - t1) ** 2 / 8;
       const jumps = finder(w.frames, size);
       let best: Jump | null = null;
       for (const j of jumps) if (Math.abs(j.tOff - t1) < 0.5 && (!best || Math.abs(j.tOff - t1) < Math.abs(best.tOff - t1))) best = j;
-      const base = { config: f.replace(".json", ""), model: m[1], fps: 240 / Number(m[2]), phase: Number(m[3]), jump: k + 1, hTruth };
-      if (!best) { rows.push({ ...base, found: false, accepted: false, hP: NaN, hF: NaN, dOff: NaN, dOn: NaN, dApex: NaN, flags: [] }); return; }
-      rows.push({ ...base, found: true, accepted: (best as any).rejected !== undefined ? !(best as any).rejected : !best.flags.some((x) => (REJECT as string[]).includes(x)),
+      const row = { config: f.replace(".json", ""), model: m[1], fps: base / Number(m[2]), phase: Number(m[3]), jump: k + 1, hTruth };
+      if (!best) { rows.push({ ...row, found: false, accepted: false, hP: NaN, hF: NaN, dOff: NaN, dOn: NaN, dApex: NaN, flags: [] }); return; }
+      rows.push({ ...row, found: true, accepted: (best as any).rejected !== undefined ? !(best as any).rejected : !best.flags.some((x) => (REJECT as string[]).includes(x)),
         hP: best.hPrimary, hF: best.hFlight, dOff: best.tOff - t1, dOn: best.tOn - t2, dApex: best.tApex - (t1 + t2) / 2, flags: best.flags });
     });
   }

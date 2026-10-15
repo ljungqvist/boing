@@ -21,10 +21,11 @@ or 50 cm). No new recordings; evidence from the existing videos, landmark files 
    frames. **Changed: heavy for re-measuring; jumps with unsteady points rejected.**
 4. **A rejected re-measurement fell back to the live height** ("≈"), measured from fewer frames of the
    same movement. **Changed: only a doubtful recording falls back now, not an unmeasurable movement.**
-5. **What remains: a systematic offset of about +4 cm on that reference video.** The toe point leaves
-   the floor before the toes do and touches down after them. It depends on feet, footwear and camera,
-   and it can't be calibrated from the data we have (on the athlete video it was −2 cm). Also a spread
-   of ±1–2 cm (heavy, 30 fps), which is the 30 fps limit.
+5. **What remains: a systematic offset, +2 to +4 cm in your own sessions.** The toe point leaves the
+   floor before the toes do and touches down after them, and the hips' apex lags a little. It varies by
+   session (+2.3 cm on 2026-10-13, wooden floor; +3.8 cm on 2026-10-14, tiles; −2 cm on the athlete
+   video), so it can't be calibrated from the data we have. Also a spread of ±1–2 cm (heavy, 30 fps),
+   which is the 30 fps limit.
 
 Simulated native live mode on the 7 hand-marked jumps of the 240 fps video, thinned to 30 fps at all 8
 frame phases (56 jumps). Error of the shown height against the hand-marked flight-time height:
@@ -37,10 +38,12 @@ frame phases (56 jumps). Error of the shown height against the hand-marked fligh
 
 (Branch: 8 of 56 rejected, the drifting jump at every phase. The mean ≈ +4 cm is the offset in point 5.)
 
-A caveat about the "21–25 cm" itself: on the 240 fps session (Galaxy S24+, socks on tiles) the
-hand-marked flight times give **14.4–19.3 cm**, while Boing read 19–22. If that offset holds for the live
-sessions too, the jumps are lower than Boing says, and a "16" may be nearer the truth than it looks.
-Only a reference measurement (contact mat, force plate, or a 240 fps clip marked by hand) can settle this.
+A caveat about the "21–25 cm" itself: in both sessions with a hand-marked truth Boing reads high. On
+2026-10-14 (240 fps, Galaxy S24+, socks on tiles) the flight times give **14.4–19.3 cm**, Boing read
+19–22; on 2026-10-13 (120 and 60 fps, wooden floor) **20.4–24.8 cm**, Boing read 22.7–27.4. If that holds
+for the live sessions, the jumps are 2–4 cm lower than Boing says, and a "16" may be nearer the truth than
+it looks. Only a reference measurement (contact mat, force plate, or a 240 fps clip marked by hand) in the
+live setup can settle this.
 
 ## 1. How a live jump is measured (native app)
 
@@ -161,6 +164,24 @@ Also tried: takeoff = when the legs (hip − toe) are longest (−11 ± 7 ms at 
 it removes most of the offset (heavy at 60 fps: +1.7 ± 0.8 cm), but on every other video it reads 5–25 cm
 low (side views, shoes): the leg-length peak depends on the camera angle. A warning against tuning the
 edges on this one video.
+
+### F4b A second session with a truth (new)
+
+To check whether the 240 fps video is typical, the 2026-10-13 recordings at 120 fps (2 jumps) and 60 fps
+(2 jumps) were marked by hand from feet crops (last foot off, first foot down; ±1 frame; stored in
+`testdata/videos.json`, sheets in `../boing-data/review/sheets/`). Boing (heavy, every frame):
+
+| jump | truth (flight time) | Boing hP / hF | takeoff / landing, Boing − hand |
+|---|---|---|---|
+| 120 fps #1 | 22.6 cm (429 ms) | 23.3 / 24.3 | −8 / +8 ms |
+| 120 fps #2 | 20.4 cm (408 ms) | 22.7 / 22.4 | −6 / +14 ms |
+| 60 fps #1 | 24.8 cm (450 ms) | 27.4 / 26.9 | −8 / +10 ms |
+| 60 fps #2 | 22.9 cm (432 ms) | 26.3 / 23.9 | +4 / +14 ms |
+
+The same edges, but smaller than on 2026-10-14 (−17 / +36 ms there). Native live mode simulated on the
+120 fps video (30 fps, 4 phases × 2 jumps): heavy +1.9 ± 1.3 cm (sharp) and +2.8 ± 1.3 (blur 1/30 s),
+full +3.0 ± 1.7 and +4.7 ± 1.9, worst +7.2. Same order as on the first video: heavy beats full, and the
+offset is what's left.
 
 ### F5 Smaller things
 
