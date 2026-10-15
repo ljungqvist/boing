@@ -2,6 +2,7 @@
 thinned to a lower rate (every Nth frame, each phase), bitmaps subsampled like the Android decoder.
 
 Usage: simulate_native.py <video> <time_scale> <out_dir> <windows.json> <models,...> <every:phases,...> [blur]
+[mode] "image": IMAGE running mode instead of VIDEO.
 blur N: each kept frame is the mean of the N source frames centred on it (motion blur of a longer exposure).
 windows.json: [[from, to], ...] in real seconds (file seconds × time_scale).
 Writes <out_dir>/<model>_e<every>_p<phase>.json: {"width", "height", "windows": [{"from", "to", "frames"}]}.
@@ -17,6 +18,7 @@ from mediapipe.tasks.python import BaseOptions, vision
 
 video, scale, out_dir, windows_path, models, plans = sys.argv[1:7]
 blur = int(sys.argv[7]) if len(sys.argv) > 7 else 1
+image_mode = len(sys.argv) > 8 and sys.argv[8] == "image"  # every frame on its own (no tracking/smoothing)
 scale = float(scale)
 windows = json.load(open(windows_path))
 models = models.split(",")
@@ -39,7 +41,7 @@ active = {}  # config -> (landmarker, last_ms, frames)
 def open_landmarker(model):
     opts = vision.PoseLandmarkerOptions(
         base_options=BaseOptions(model_asset_path=os.path.join(model_dir, f"pose_landmarker_{model}.task")),
-        running_mode=vision.RunningMode.VIDEO, num_poses=1)
+        running_mode=vision.RunningMode.IMAGE if image_mode else vision.RunningMode.VIDEO, num_poses=1)
     return vision.PoseLandmarker.create_from_options(opts)
 
 
@@ -90,7 +92,7 @@ while wi < len(windows):
             active[c] = (open_landmarker(c[0]), -1, [])
         lmk, last, frames = active[c]
         ms = max(int(round(t * 1000)), last + 1)
-        r = lmk.detect_for_video(image, ms)
+        r = lmk.detect(image) if image_mode else lmk.detect_for_video(image, ms)
         lm = [[round(p.x, 5), round(p.y, 5), round(p.z, 5), round(p.visibility, 3)] for p in r.pose_landmarks[0]] if r.pose_landmarks else None
         frames.append({"t": round(t, 6), "lm": lm})
         active[c] = (lmk, ms, frames)

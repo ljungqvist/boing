@@ -160,6 +160,12 @@ low. On the athlete video the toe points *lag* instead (VIDEO-mode smoothing, do
 offset depends on the person, the footwear and the camera; one sign doesn't fit all. Not changed. Needs
 reference jumps in the user's own setup.
 
+How much is smoothing? The same simulation in IMAGE mode (every frame on its own, no tracking):
+takeoff −29 ms, landing +24 ms, apex 6 ms *before* the midpoint, against −18 / +36 / +1 ms in VIDEO mode.
+So the foot geometry alone widens the flight by ≈ 25 ms per edge, and VIDEO-mode smoothing delays every
+point by ≈ 10 ms. That delay partly cancels the early takeoff, so IMAGE mode reads higher
+(+5.1 ± 1.3 cm vs +3.8 ± 1.1). No reason to switch.
+
 Also tried: takeoff = when the legs (hip − toe) are longest (−11 ± 7 ms at 240 fps). On the 240 fps video
 it removes most of the offset (heavy at 60 fps: +1.7 ± 0.8 cm), but on every other video it reads 5–25 cm
 low (side views, shoes): the leg-length peak depends on the camera angle. A warning against tuning the
@@ -214,13 +220,17 @@ can't be told apart from a one-frame takeoff error.
   Live jumps flagged `inconsistent` or `poor-fit` at the live frame rate are still re-measured.
 - `mobile/src/logic/live.ts`, `src/web/main.ts`: a re-measurement rejected for the movement (`inconsistent`,
   `out-of-view`, `not-parabola`, `poor-fit`) is listed as ignored instead of showing the live height.
-  A doubtful recording (`g-implausible`, `few-frames`) still falls back. Not pending when the result arrives.
+  A doubtful recording (`g-implausible`, `few-frames`) still falls back. Not pending when the result arrives
+  (also when a result handler throws; the clip is deleted either way).
 - `mobile/src/ui/LiveCamera.tsx`: re-measure with the heavy model (downloaded in the background; full
-  until it's there), timeout 60 s, the model is logged in the diagnostics. Type-checks, but not run on a
+  until it's there, and for good if heavy fails to load), timeout 60 s, the model is logged in the
+  diagnostics. Type-checks, but not run on a
   phone. On the Galaxy Tab A8 heavy took ≈ 0.24 s per frame, i.e. ≈ 20 s per jump at 30 fps; a flagship
   should take a few seconds.
 
-Unit tests (91) and e2e tests (9) pass.
+Unit tests (93) and e2e tests (9) pass. A separate review of the diff found no blocking issues; its
+smaller points (cleanup when a handler throws, the ignored entry showing the re-measured height in the
+web app, a fallback when heavy won't load, two more tests) are in.
 
 ## 5. Recommendations, not done
 
@@ -231,6 +241,9 @@ Ranked by expected effect on the outliers:
 - **R2 A setup hint, if wanted**: camera about hip height and level instead of on the floor, 2.5–3 m away.
   By geometry it cuts the drift sensitivity (F1) about tenfold (untested; needs R5 first). It's a setup
   instruction, not technique.
+- **R2b Bright light**, another setup hint: the camera then exposes shorter and the feet blur less. In
+  the simulation blur alone took heavy's spread from ± 1.1 (sharp) to ± 1.7 (1/60 s) and ± 2.1 cm (1/30 s),
+  full's worst case from +10 to +13 cm.
 - **R3 A reference session in your own setup**: 10 jumps filmed in 240 fps slow motion from the side of the
   feet (or on a contact mat) while the app measures live. That fixes the offset (F4) for this setup and
   shows whether the offset is the same at 30 fps live.
@@ -256,4 +269,5 @@ landing posture (bent-knee landings read 5–6 cm higher) and, on this video, a 
 - `simeval.ts` (current code against the hand-marked truth), `simvariants.ts` / `jumps_exp.ts` (option sets
   of an experimental copy of `findJumps`; with no options it reproduces `findJumps` exactly, checked by
   `check_exp.ts`), `rules.ts` / `falsereject.ts` (rejection rules on simulation and real
-  data), `dump.ts` (per-frame dump of one jump), `apex240*.ts`, `feet240.ts` (240 fps landmark studies).
+  data), `dump.ts` (per-frame dump of one jump), `apex240*.ts`, `feet240.ts` (240 fps landmark studies),
+  `contact_sheet.py` (feet crops frame by frame, for marking takeoff and landing by eye).
