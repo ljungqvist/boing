@@ -12,6 +12,8 @@ import { comY, trunkY } from "./com";
 export interface ExpOptions {
   /** Keep takeoff between the last contact frame and the first airborne frame (landing likewise). */
   clampEdges?: boolean;
+  /** Drop frames at the start (end) of the airborne run that are still at the floor level before (after) the jump. */
+  edgeTrim?: boolean;
   /** trimCreep measures the creep from the same rolling floor that started the run (not the floor before). */
   creepRolling?: boolean;
   /** Airborne threshold: toes above the floor by this fraction of body height (current 0.02). */
@@ -103,12 +105,21 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
   }
 
   const jumps: ExpJump[] = [];
-  for (const [i0, i1] of runs) {
-    const dur = s.t[i1] - s.t[i0];
+  for (const [r0, r1] of runs) {
+    const dur = s.t[r1] - s.t[r0];
     if (dur < 0.1 || dur > 1.2) continue;
+    let i0 = r0, i1 = r1;
+    if (opts.edgeTrim) {
+      // The rolling floor mixes the floor before and after: landing closer to (or further from) the
+      // camera moves it, and standing frames then pass for flight. Judge each edge by its own floor.
+      const fb = windowMedian(s.t, s.toe, s.t[r0] - 0.6, s.t[r0] - 0.1);
+      const fa = windowMedian(s.t, s.toe, s.t[r1] + 0.1, s.t[r1] + 0.6);
+      if (fb !== null) while (i0 < i1 && !(s.toe[i0] - fb > thr)) i0++;
+      if (fa !== null) while (i1 > i0 && !(s.toe[i1] - fa > thr)) i1--;
+      if (s.t[i1] - s.t[i0] < 0.1) continue;
+    }
     const idx = range(i0, i1).filter((i) => Number.isFinite(s.toe[i]) && Number.isFinite(s.hip[i]));
     if (idx.length < 5) continue;
-
     const t0 = s.t[i0], t1 = s.t[i1];
     const floorBefore = windowMedian(s.t, s.toe, t0 - 0.6, t0 - 0.1) ?? floor[i0];
     const floorAfter = windowMedian(s.t, s.toe, t1 + 0.1, t1 + 0.6) ?? floorBefore;
