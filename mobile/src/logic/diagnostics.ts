@@ -17,8 +17,22 @@ function describeVideo(v: unknown): string | null {
   return `video ${num(e, "width", 0)}×${num(e, "height", 0)}, rotation ${num(e, "rotation", 0)}°, ${num(e, "fps", 0)} fps`;
 }
 
+/** The phone's tilt and movement around a jump. */
+function describeMotion(m: unknown): string | null {
+  if (!m || typeof m !== "object") return null;
+  const e = m as Entry;
+  if (typeof e.tiltDeg !== "number") return null;
+  return `phone ${num(e, "tiltDeg", 0)}° back${e.upsideDown ? " (upside down)" : ""}, turn ≤ ${num(e, "turnMaxDegS", 0)}°/s, shake ${num(e, "shakeMaxG", 2)} g`;
+}
+
 /** One line per live jump: how it was measured, and why re-measuring failed. */
 export function describeLog(e: Entry): string {
+  const line = describeJump(e);
+  const motion = describeMotion(e.motion);
+  return motion ? `${line} · ${motion}` : line;
+}
+
+function describeJump(e: Entry): string {
   if (e.tOff === undefined) return String(e.error ?? JSON.stringify(e));
   const live = `live ${cmOf(e, "hLive")} cm (${e.framesLive ?? "–"} fr)`;
   if (e.h !== undefined && !e.error) {
@@ -48,8 +62,15 @@ export function diagnosticsReport(context: Entry, logs: Entry[]): string {
     "",
     ...(logs.length ? logs.map(describeLog) : ["(no jumps yet)"]),
     "",
-    JSON.stringify(logs.map(({ pose: _pose, ...e }) => e)),
+    JSON.stringify(logs.map(withoutSamples)),
   ].join("\n");
+}
+
+/** An entry without its bulky data (pose per frame, motion samples): what the readable report keeps. */
+function withoutSamples({ pose: _pose, ...e }: Entry): Entry {
+  if (!e.motion || typeof e.motion !== "object") return e;
+  const { acc: _acc, gyro: _gyro, ...motion } = e.motion as Entry;
+  return { ...e, motion };
 }
 
 /**
@@ -71,8 +92,13 @@ export function compactPose(frames: PoseFrame[], size: { width: number; height: 
   };
 }
 
-/** Pose data of the latest re-measured jumps (at most `max`), as JSON text to share for offline analysis. */
+/** Pose and motion data of the latest re-measured jumps (at most `max`), as JSON text for offline analysis. */
 export function poseReport(context: Entry, logs: Entry[], max = 8): string {
   const jumps = logs.filter((e) => e.pose).slice(0, max).map(({ pose, ...e }) => ({ ...e, pose }));
   return JSON.stringify({ boing: "pose", version: 1, ...context, jumps });
+}
+
+/** A whole live session for offline analysis: context, every entry with its pose and motion data, clips. */
+export function debugPackage(context: Entry, logs: Entry[], clips: string[]): string {
+  return JSON.stringify({ boing: "debug", version: 1, ...context, clips, logs });
 }
