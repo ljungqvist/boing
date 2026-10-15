@@ -92,12 +92,18 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           };
         },
         async analyzeClip(path, from, to) {
-          const heavy = measureModel.current;
-          const r = await boingPose.analyzeVideo(
-            path,
-            { modelPath: toPath(heavy ?? model.current!), from, to, minInterval: 0, preferGpu: true },
-            () => {},
-          );
+          const run = (m: string) =>
+            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: true }, () => {});
+          let heavy = measureModel.current;
+          let r;
+          try {
+            r = await run(heavy ?? model.current!);
+          } catch (e) {
+            if (!heavy) throw e;
+            // A heavy model that won't load (damaged download): stay with the live model from now on.
+            measureModel.current = heavy = null;
+            r = await run(model.current!);
+          }
           const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
           return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
         },

@@ -264,8 +264,10 @@ async function refineLive(
   }
   Object.assign(log, { error: result.error, flags: result.flags });
   if (result.flags?.some((f) => MOVEMENT_REJECT.includes(f))) {
-    // The movement itself can't be measured: listed as ignored, the live height isn't shown instead.
-    addResult({ ...j, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames });
+    // The movement itself can't be measured: listed as ignored (with the re-measured heights, at the live
+    // time), the live height isn't shown instead.
+    const r = result.rejected ?? j;
+    addResult({ ...r, tOff: j.tOff, tOn: j.tOn, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames });
     if (pending === 0) flash.hidden = true; // it was "Measuring…"
     return;
   }
