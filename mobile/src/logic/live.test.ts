@@ -13,6 +13,8 @@ function setup(opts: {
   recordFails?: boolean; analyzeFails?: boolean; startLag?: number; liveFps?: number;
   /** The recording's clock runs this much slower around each takeoff (a wrong time base). */
   clipStretch?: number;
+  /** In the recording, the hips drift up this fast (m/s) after takeoff: moving towards a floor-level camera. */
+  clipDrift?: number;
 } = {}) {
   const jumps = [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
   const scene = syntheticFrames({ fps: 240, duration: 14, jumps, seed: 5 });
@@ -37,7 +39,7 @@ function setup(opts: {
       const takeoff = jumps.map((j) => j.tTakeoff).find((t) => t - start > from && t - start < to) ?? 0;
       const frames: PoseFrame[] = scene.frames
         .filter((f) => f.t - start >= from && f.t - start <= to)
-        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: f.lm }));
+        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: drifted(f, takeoff) }));
       return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 } };
     },
     deleteClip(path) {
@@ -45,13 +47,21 @@ function setup(opts: {
       if (c) c.deleted = true;
     },
   };
+  // 300 px per metre in syntheticFrames.
+  const drifted = (f: PoseFrame, takeoff: number) => {
+    const v = opts.clipDrift ?? 0;
+    if (!v || !f.lm || f.t < takeoff) return f.lm;
+    const up = (v * 300 * (f.t - takeoff)) / scene.height;
+    return f.lm.map((p, i) => (i === 23 || i === 24 ? [p[0], p[1] - up, p[2], p[3]] : p) as typeof p);
+  };
   const results: Measured[] = [];
+  const pendingAtResult: number[] = [];
   const logs: Record<string, unknown>[] = [];
   let measuring = 0;
   const live = new LiveController(deps, {
     status: () => {},
     measuring: () => measuring++,
-    result: (m) => results.push(m),
+    result: (m) => { results.push(m); pendingAtResult.push(live.pending); },
     log: (e) => logs.push(e),
   });
   async function run() {
@@ -66,7 +76,7 @@ function setup(opts: {
     }
     await live.stop();
   }
-  return { live, run, results, clips, analysed, logs, measuring: () => measuring };
+  return { live, run, results, clips, analysed, logs, pendingAtResult, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
@@ -131,5 +141,21 @@ describe("LiveController", () => {
     const ok = s.results.filter((m) => accepted(m.jump));
     expect(ok).toHaveLength(2);
     expect(ok.every((m) => !m.refined && !m.approximate)).toBe(true);
+  });
+
+  it("doesn't show the live height when re-measuring finds the movement unmeasurable", async () => {
+    // In the recording the hips' highest point comes too late for the landing (the person moved
+    // towards the camera): the live analysis, with fewer frames, would show a height anyway.
+    const s = setup({ clipDrift: 0.5, liveFps: 30 });
+    await s.run();
+    expect(s.results).toHaveLength(2);
+    expect(s.results.every((m) => m.refined && !accepted(m.jump) && m.jump.flags.includes("inconsistent"))).toBe(true);
+    expect(s.results.some((m) => m.approximate)).toBe(false);
+  });
+
+  it("is no longer pending when a result arrives", async () => {
+    const s = setup();
+    await s.run();
+    expect(s.pendingAtResult).toEqual([0, 0]);
   });
 });

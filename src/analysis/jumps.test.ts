@@ -109,4 +109,19 @@ describe("findJumps on synthetic CMJs", () => {
     expect(j.hPrimary / j.hFlight).toBeGreaterThan(2);
     expect(j.flags).toContain("inconsistent");
   });
+
+  it("flags a highest point too late for the landing (moving towards the camera in the air)", () => {
+    // A floor-level camera sees the hips rise when the person comes closer: model it as an extra
+    // upward drift of the hips after takeoff. 0.4 m/s puts the apex ≈ 40 ms late.
+    const drift = (v: number) => {
+      const s = syntheticSignals({ fps: 30, noise: 0.003 });
+      s.hip = s.hip.map((y, i) => y + Math.max(0, s.t[i] - 2) * v * 300);
+      return findJumps(s)[0];
+    };
+    const moved = drift(0.4);
+    expect(moved.hPrimary / moved.hFlight).toBeGreaterThan(1.2);
+    expect(moved.flags).toContain("inconsistent");
+    // A little drift stays within the noise allowance.
+    expect(drift(0.1).flags).not.toContain("inconsistent");
+  });
 });

@@ -15,7 +15,7 @@ export type JumpFlag =
   | "disagree"        // takeoff→apex and flight-time heights differ: bent-knee landing?
   | "camera-moved"    // floor line differs before and after the jump
   | "out-of-view"     // hips or feet left the picture, or the person was lost in the flight: too close?
-  | "inconsistent";   // takeoff→apex and flight-time heights too far apart to be one flight
+  | "inconsistent";   // takeoff→apex and flight-time heights can't be one flight (or the apex comes too late)
 
 export interface Jump {
   tOff: number;
@@ -46,6 +46,13 @@ const MAX_OUTSIDE = 0.03;
 const MAX_LOST = 0.2;
 /** Takeoff→apex and flight-time heights further apart than this factor aren't one flight. */
 const MAX_HEIGHT_RATIO = 2;
+/**
+ * Takeoff→apex may exceed the flight-time height only by measurement noise: more would mean landing
+ * higher than the takeoff, which a jump can't do (the body is never more stretched than at takeoff).
+ * Moving towards a floor-level camera in the air shifts the hips' apex late and reads 28–71 cm for a
+ * 16 cm jump; normal jumps stay below ≈ 1.15 at 30 fps (docs/evaluation/2026-10-15-accuracy-review.md).
+ */
+const MAX_RISE_OVER_FLIGHT = 1.2;
 
 export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
   const g = opts.g ?? 9.81;
@@ -124,7 +131,8 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     if (Math.abs(hPrimary - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
     if (j.floorShiftRel > 0.02) j.flags.push("camera-moved");
     if (j.lostRel > MAX_LOST || j.outsideRel > MAX_OUTSIDE) j.flags.push("out-of-view");
-    if (!(Math.max(hPrimary, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hPrimary, hFlight))) j.flags.push("inconsistent");
+    if (!(Math.max(hPrimary, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hPrimary, hFlight)) || !(hPrimary <= MAX_RISE_OVER_FLIGHT * hFlight))
+      j.flags.push("inconsistent");
     jumps.push(j);
   }
   return jumps;
