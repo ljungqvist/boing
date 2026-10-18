@@ -11,10 +11,15 @@
     "ios": {
       "bundleIdentifier": "info.ljungqvist.boing",
       "supportsTablet": true,
-      "deploymentTarget": "15.5",
+      "deploymentTarget": "16.4",
       "infoPlist": {
-        "NSCameraUsageDescription": "Boing films your jump to measure its height."
-      }
+        "NSCameraUsageDescription": "Boing films your jump to measure its height.",
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown"
+        ]
+      },
+      "requireFullScreen": true
     },
     "android": {
       "package": "info.ljungqvist.boing",
