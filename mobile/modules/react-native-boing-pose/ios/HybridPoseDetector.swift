@@ -5,7 +5,7 @@ import NitroModules
 import VisionCamera
 
 /// Live pose detection on VisionCamera frames (called synchronously from the frame worklet).
-/// The frame output uses physical buffer rotation, so frames are upright.
+/// The frame output uses physical buffer rotation (BGRA), so frames are upright.
 class HybridPoseDetector: HybridPoseDetectorSpec {
   private let landmarker: VideoLandmarker
   private let lock = NSLock()
