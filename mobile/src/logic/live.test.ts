@@ -15,9 +15,11 @@ function setup(opts: {
   clipStretch?: number;
   /** In the recording, the hips drift up this fast (m/s) after takeoff: moving towards a floor-level camera. */
   clipDrift?: number;
+  jumps?: { tTakeoff: number; height: number }[];
+  duration?: number;
 } = {}) {
-  const jumps = [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
-  const scene = syntheticFrames({ fps: 240, duration: 14, jumps, seed: 5 });
+  const jumps = opts.jumps ?? [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
+  const scene = syntheticFrames({ fps: 240, duration: opts.duration ?? 14, jumps, seed: 5 });
   const size = { width: scene.width, height: scene.height };
   let now = 0;
   const clips: { start: number; stopped: boolean; deleted: boolean; hasJumps?: boolean }[] = [];
@@ -113,6 +115,24 @@ describe("LiveController", () => {
     await s.run();
     // 14 s with jumps at 4 and 9 s: clips end after each jump; none runs twice at a time.
     expect(s.clips.length).toBeGreaterThanOrEqual(3);
+    expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
+  });
+
+  it("doesn't replace the clip just before a jump while someone is in the picture", async () => {
+    // Jumping every ~17 s (after hearing the last height): a clip without jumps used to be replaced
+    // after 15 s, i.e. right in the next countermovement, and the jump couldn't be re-measured.
+    const s = setup({ jumps: [{ tTakeoff: 4, height: 0.25 }, { tTakeoff: 21, height: 0.25 }], duration: 25 });
+    await s.run();
+    const ok = s.results.filter((m) => accepted(m.jump));
+    expect(ok).toHaveLength(2);
+    expect(ok.every((m) => m.refined)).toBe(true);
+  });
+
+  it("still replaces a clip without jumps after a minute in the picture", async () => {
+    const s = setup({ jumps: [], duration: 70 });
+    await s.run();
+    expect(s.clips).toHaveLength(2);
+    expect(s.clips[1].start).toBeGreaterThan(60);
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
   });
 
