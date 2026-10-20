@@ -41,8 +41,13 @@ export interface LiveEvents {
 export interface LiveOptions {
   /** Record clips and measure each jump again from every recorded frame. */
   record?: boolean;
-  /** Seconds after which a clip without jumps is replaced by a new one (keeps files small). */
+  /**
+   * Seconds after which a clip without jumps is replaced by a new one (keeps files small), once
+   * nobody is in the picture. Replacing it leaves a moment that can't be re-measured.
+   */
   rotateSeconds?: number;
+  /** … and while someone is in the picture (and may be about to jump), only after this many seconds. */
+  rotateSecondsInView?: number;
   /** Give up re-measuring a jump after this many milliseconds. */
   timeoutMs?: number;
 }
@@ -69,6 +74,7 @@ export class LiveController {
   private firstT = NaN;
   private lastT = NaN;
   private lastAir = -Infinity;
+  private lastPerson = -Infinity;
   private clip: OpenClip | null = null;
   private starting = false;
   /** After a failed recording start, wait until this frame time before trying again. */
@@ -77,6 +83,7 @@ export class LiveController {
   private stopped = false;
   private readonly record: boolean;
   private readonly rotateSeconds: number;
+  private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
   /** Jumps waiting for their re-measured height. */
   pending = 0;
@@ -84,6 +91,7 @@ export class LiveController {
   constructor(private readonly deps: LiveDeps, private readonly events: LiveEvents, opts: LiveOptions = {}) {
     this.record = opts.record ?? true;
     this.rotateSeconds = opts.rotateSeconds ?? 15;
+    this.rotateSecondsInView = opts.rotateSecondsInView ?? 60;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
   }
 
@@ -114,6 +122,7 @@ export class LiveController {
 
     const status = liveStatus(this.history, frame.lm, this.fps, t - this.firstT > 2);
     if (status.tone === "air") this.lastAir = t;
+    if (frame.lm) this.lastPerson = t;
     this.events.status(status);
 
     for (const j of this.tracker.push(frame, size)) this.onJump(j, size);
@@ -125,8 +134,12 @@ export class LiveController {
     }
     const c = this.clip;
     const lastEnd = Math.max(...c.jumps.map((j) => j.tOn + AFTER + PAD));
-    // A clip with jumps ends once it covers them; one without is replaced now and then.
-    if (c.jumps.length > 0 ? t >= lastEnd : t - c.start > this.rotateSeconds && t - this.lastAir > 2) void this.rotate();
+    // A clip with jumps ends once it covers them; one without is replaced now and then. Not soon while
+    // someone is in the picture: people jump every 15–20 s (after hearing the height), and a new clip
+    // started in the countermovement lacks the standing before the takeoff.
+    const age = t - c.start;
+    const quiet = t - this.lastAir > 2 && (t - this.lastPerson > 1 ? age > this.rotateSeconds : age > this.rotateSecondsInView);
+    if (c.jumps.length > 0 ? t >= lastEnd : quiet) void this.rotate();
   }
 
   /** Stops measuring; jumps already recorded are still measured. */
