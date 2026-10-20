@@ -72,6 +72,21 @@ Re-measured and accepted, without the drift jump (7): **+1.5 ± 1.7 cm** against
    so the whole-flight toe parabola is too wide and its floor crossings too far out (flight +51 ms).
    The jumps were clean; the measurement wasn't. A takeoff/landing edge that uses only the frames next to
    the floor (R6 hinge fit) would address this; not attempted.
+   **Follow-up: no edge variant does better** (`edge_eval.ts`, shown height incl. the cap, accepted/all,
+   cm). Fitting the toe parabola only below 70/80/90 % of its peak (new `toeFitBelow`, skips the
+   plateau), local edges, the hinge fit, per-foot edges and clamped edges each help one set and hurt
+   another, and none brings the 541 s jump back:
+
+   | | today | below 0.8 | below 0.9 | clamp | per foot (last) |
+   |---|---|---|---|---|---|
+   | sim 240→30 heavy, sharp | +3.8 ± 1.1 | +3.6 ± 1.2 | +3.4 ± 1.1 | +3.5 ± 1.1 | −0.6 ± 1.2 |
+   | sim 240→30 heavy, blur 1/30 s | +4.9 ± 1.8 | +5.1 ± 2.0 | +4.8 ± 1.8 | +4.7 ± 1.8 | +0.2 ± 1.1 |
+   | native 10-15 table + floor | +0.9 ± 1.5 | +0.8 ± 1.4 | +1.2 ± 1.9 | +1.0 ± 2.2 | −3.7 ± 1.5 |
+   | native 10-19 (this session) | +2.0 ± 2.1 | +2.2 ± 2.3 | +1.7 ± 1.9 (8/10) | +1.7 ± 2.0 (8/10) | −3.1 ± 1.9 |
+
+   Per-foot edges again remove the offset on the 240 fps video and overshoot on the real sessions
+   (as in the accuracy review). Not changed.
+
 4. **The 8.5 and 11.1 cm readings were real**: two small hops (7.4 and 8.2 cm). The live tracker said
    21.1 for the first; the re-measurement was right.
 5. **Live candidates are mostly noise.** 20 of 30 were never re-measured; 18 of those weren't jumps
@@ -85,4 +100,5 @@ Re-measured and accepted, without the drift jump (7): **+1.5 ± 1.7 cm** against
 sock toes → `review/side_20261019/edges_redtoe.json`), `side_eval.ts` (logged poses through `findJumps`
 against the truth), `side_drift.py` / `side_scale.py` (drift in the side view, body size in the front
 view), `side_toes.py` (per-frame toe/hip track of a logged jump), `size_change.ts` (apparent size
-change across every jump at hand), `cap_eval.ts` (capping/rejection variants on every truth set). Paths point at `../boing-data`.
+change across every jump at hand), `cap_eval.ts` (capping/rejection variants on every truth set), `edge_eval.ts` (experimental finder
+option sets on every truth set). Paths point at `../boing-data`.
