@@ -7,6 +7,7 @@ import { Linking, Platform, Pressable, ScrollView, Share, StyleSheet, Text, Text
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
+import { discardFeedback } from "../../src/analysis/discard";
 import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
@@ -102,10 +103,13 @@ function Main() {
     if (!accepted(j)) {
       const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
       setIgnored((xs) => [`at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm)`, ...xs]);
-      // Done measuring, no height: say so (unless another jump is still being measured).
-      if (live && controller.current?.pending === 0) {
-        showFlash({ text: "Couldn't measure", measuring: false, failed: true });
-        announceFailure(soundRef.current);
+      if (live) {
+        // Say so only if the recording was re-measured and still gave no height; live rejects stay silent.
+        const feedback = discardFeedback({ refined: m.refined, pending: controller.current?.pending ?? 0 });
+        if (feedback === "failure") {
+          showFlash({ text: "Couldn't measure", measuring: false, failed: true });
+          announceFailure(soundRef.current);
+        } else if (feedback === "clear-measuring") setFlash((f) => (f?.measuring ? null : f));
       }
       return;
     }

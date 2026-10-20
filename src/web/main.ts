@@ -1,4 +1,5 @@
 import "./style.css";
+import { discardFeedback } from "../analysis/discard";
 import { findJumps, type Jump, type JumpFlag } from "../analysis/jumps";
 import { toSignals } from "../analysis/signals";
 import { JumpTracker } from "../analysis/tracker";
@@ -188,6 +189,8 @@ const LIVE_ONLY: Measurement = { refined: false, approximate: false, framesLive:
 function addResult(
   j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number }, live: boolean,
   how: Measurement = { ...LIVE_ONLY, framesLive: j.airborneFrames },
+  /** The jump was measured again from the recording (whatever the result), not just by the live tracker. */
+  remeasured = false,
 ) {
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   app.results.push({ hPrimary: j.hPrimary, hFlight: j.hFlight, flight: j.tOn - j.tOff, fps, flags: j.flags, accepted, ...how });
@@ -199,10 +202,13 @@ function addResult(
     const item = document.createElement("li");
     item.textContent = `at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm, g ${j.gImplied.toFixed(1)})`;
     ignoredEl.querySelector("ul")!.prepend(item);
-    // Done measuring, no height: say so (unless another jump is still being measured).
-    if (live && pending === 0) {
-      showFlashText("Couldn't measure", "failed");
-      feedback.announceFailure();
+    if (live) {
+      // Say so only if the recording was re-measured and still gave no height; live rejects stay silent.
+      const action = discardFeedback({ refined: remeasured, pending });
+      if (action === "failure") {
+        showFlashText("Couldn't measure", "failed");
+        feedback.announceFailure();
+      } else if (action === "clear-measuring" && flash.classList.contains("measuring")) flash.hidden = true;
     }
     return;
   }
@@ -264,7 +270,7 @@ async function refineLive(
       refined: { width: result.size.width, height: result.size.height, fps: result.fps, start: piece!.start, frames: result.frames },
     });
     addResult(r, result.fps, result.frames, result.size, true,
-      { refined: true, approximate: false, framesLive: j.airborneFrames, framesRefined: r.airborneFrames });
+      { refined: true, approximate: false, framesLive: j.airborneFrames, framesRefined: r.airborneFrames }, true);
     return;
   }
   Object.assign(log, { error: result.error, flags: result.flags });
@@ -272,7 +278,7 @@ async function refineLive(
     // The movement itself can't be measured: listed as ignored (with the re-measured heights, at the live
     // time), the live height isn't shown instead.
     const r = result.rejected ?? j;
-    addResult({ ...r, tOff: j.tOff, tOn: j.tOn, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames });
+    addResult({ ...r, tOff: j.tOff, tOn: j.tOn, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames }, true);
     return;
   }
   console.warn("refinement failed, using the live result", result);
