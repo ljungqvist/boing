@@ -33,7 +33,8 @@ def mdta_metadata(path):
     """Key/value pairs from the moov/meta (mdta) box; empty if absent."""
     with open(path, "rb") as f:
         b = f.read()
-    meta = _find(b, 0, len(b), [b"moov", b"meta"])
+    # Android writes moov/meta; ffmpeg (-movflags use_metadata_tags) writes moov/udta/meta.
+    meta = _find(b, 0, len(b), [b"moov", b"meta"]) or _find(b, 0, len(b), [b"moov", b"udta", b"meta"])
     if not meta:
         return {}
     ds, e = meta
@@ -69,4 +70,9 @@ def mdta_metadata(path):
 def capture_fps(path):
     """Capture frame rate from Android metadata, or None."""
     v = mdta_metadata(path).get("com.android.capture.fps")
+    if isinstance(v, str):  # ffmpeg writes it back as text
+        try:
+            v = float(v)
+        except ValueError:
+            return None
     return float(v) if isinstance(v, (int, float)) and v > 0 else None
