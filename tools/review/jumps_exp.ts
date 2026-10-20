@@ -20,6 +20,8 @@ export interface ExpOptions {
   thrBody?: number;
   /** Fit the toe parabola only to frames above this fraction of the toe peak (0 = all). */
   toeFitAbove?: number;
+  /** Fit the toe parabola only to frames below this fraction of the toe peak (rise and fall, not the top). */
+  toeFitBelow?: number;
   /** Floor level for the landing root: before the jump (current) or after it. */
   landFloor?: "before" | "after";
   /** Signal whose parabola vertex is the apex. */
@@ -135,6 +137,13 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
       const peak = Math.max(...fl.frames.map((i) => s.toe[i] - floorBefore));
       const sel = fl.frames.filter((i) => s.toe[i] - floorBefore >= opts.toeFitAbove! * peak);
       if (sel.length >= 5) toeFrames = sel;
+    }
+    if (opts.toeFitBelow) {
+      const peak = Math.max(...fl.frames.map((i) => s.toe[i] - floorBefore));
+      const kPeak = fl.frames.find((i) => s.toe[i] - floorBefore === peak)!;
+      const sel = fl.frames.filter((i) => s.toe[i] - floorBefore <= opts.toeFitBelow! * peak);
+      // Needs frames on both sides of the top.
+      if (sel.length >= 5 && sel.some((i) => i < kPeak) && sel.some((i) => i > kPeak)) toeFrames = sel;
     }
     const toeFit = fitQuadratic(toeFrames.map((i) => s.t[i]), toeFrames.map((i) => s.toe[i]));
     const hipFit = fitQuadratic(tt, fl.frames.map((i) => s.hip[i]));
