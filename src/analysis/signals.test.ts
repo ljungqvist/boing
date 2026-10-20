@@ -25,6 +25,20 @@ describe("toSignals", () => {
     expect(s.t).toEqual([0, 1 / 30]);
   });
 
+  it("uses the visible one of a pair when the other is hidden (side view: the far foot)", () => {
+    const f = frame(0, { 0: 0.1, 23: 0.5, 24: 0.6, 29: 0.9, 30: 0.9, 31: 0.95, 32: 0.97 });
+    f.lm[32][3] = 0.2; // far toe hidden
+    const s = toSignals(video([f]));
+    expect(s.toe[0]).toBeCloseTo(200 - 0.95 * 200);
+    expect(s.hip[0]).toBeCloseTo(200 - 0.55 * 200);
+    // Both hidden: missing.
+    f.lm[31][3] = 0.2;
+    expect(Number.isNaN(toSignals(video([f])).toe[0])).toBe(true);
+    // The old behaviour on request.
+    f.lm[31][3] = 0.9;
+    expect(Number.isNaN(toSignals(video([f]), { anyOfPair: false }).toe[0])).toBe(true);
+  });
+
   it("measures how far the hips and feet lie outside the picture", () => {
     const s = toSignals(video([
       frame(0, { 0: 0.1, 23: 0.5, 24: 0.5, 29: 0.9, 30: 0.9, 31: 0.95, 32: 0.95 }),
