@@ -38,7 +38,13 @@ export interface ExpOptions {
   rejectFloorShift?: number; // reject when the floor before and after differ by more than this fraction of body
   rejectScale?: number; // reject when the hip+shoulder width at landing differs from takeoff by more than this fraction
   /** Edge time: quadratic toe root (current) or local fit near the edge. */
-  edges?: "toeParabola" | "local" | "perFoot" | "hipLeg" | "knee" | "legPeak" | "legPeakAvg";
+  edges?: "toeParabola" | "local" | "perFoot" | "hipLeg" | "knee" | "legPeak" | "legPeakAvg" | "comHinge";
+  /** comHinge: which edges come from the centre of mass (others stay toe-based). */
+  comEdges?: "both" | "takeoff" | "landing";
+  /** comHinge: the ground phase next to the flight: tangent line (C1, no acceleration) or C1 + own curvature. */
+  comGround?: "line" | "quad";
+  /** comHinge: seconds of ground phase used next to each edge. */
+  comWindow?: number;
   /** knee: half-width of the data window around the run edge (s). */
   kneeWindow?: number;
   /** hipLeg: the edge frames are the first/last with the toes this far above the floor (fraction of body). */
@@ -47,6 +53,8 @@ export interface ExpOptions {
   feet?: "last" | "mean";
   /** Level above the floor (fraction of body height) at which the toe edge is taken. */
   edgeLift?: number;
+  /** Signals from the visible one of each pair when the other is hidden (side view). */
+  anyOfPair?: boolean;
 }
 
 export interface ExpJump extends Jump {
@@ -82,7 +90,7 @@ export function extraSignals(video: PoseVideo, minVis = 0.5) {
 }
 
 export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, stature = 1.75): ExpJump[] {
-  const s = toSignals(video);
+  const s = toSignals(video, { anyOfPair: opts.anyOfPair });
   const extra = extraSignals(video);
   const n = s.t.length;
   const bodyAll = median(s.bodyPx.filter(Number.isFinite));
@@ -221,6 +229,47 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
         const q = fitQuadratic([s.t[best - 1], s.t[best], s.t[best + 1]], [leg(best - 1), leg(best), leg(best + 1)]);
         const peak = q.a < 0 ? Math.min(Math.max(q.vertex, s.t[best - 1]), s.t[best + 1]) : s.t[best];
         tOff = opts.edges === "legPeak" ? peak : (tOff + peak) / 2;
+      }
+    }
+    if (opts.edges === "comHinge") {
+      // The centre of mass is in free fall exactly while airborne: a parabola fitted to the inner flight
+      // frames, and on the ground a curve leaving it with the same position and speed (C1). The joint
+      // that fits best is the edge.
+      const fr = fl.frames.filter((i) => Number.isFinite(extra.com[i]));
+      const inner = fr.length >= 7 ? fr.slice(1, -1) : fr;
+      if (inner.length >= 5) {
+        const P = fitQuadratic(inner.map((i) => s.t[i]), inner.map((i) => extra.com[i]));
+        const Wg = opts.comWindow ?? 0.15;
+        const val = (t: number) => evalQuadratic(P, t), slope = (t: number) => 2 * P.a * (t - P.vertex);
+        const edge = (tc: number, dir: 1 | -1) => {
+          let best = Infinity, bestTau = NaN;
+          for (let tau = tc - 0.08; tau <= tc + 0.08; tau += 0.001) {
+            // Ground frames: before τ (takeoff) or after τ (landing), within the window; air frames: the other side up to the inner flight.
+            const ground: number[] = [], air: number[] = [];
+            for (let i = 0; i < n; i++) {
+              if (!Number.isFinite(extra.com[i])) continue;
+              const x = s.t[i] - tau;
+              if (dir * x < 0 && dir * x >= -Wg) ground.push(i);
+              else if (dir * x >= 0 && dir * x <= 0.12) air.push(i);
+            }
+            if (ground.length < 2 || air.length < 1) continue;
+            const v0 = val(tau), d0 = slope(tau);
+            let c = 0;
+            if (opts.comGround === "quad") {
+              let num = 0, den = 0;
+              for (const i of ground) { const x = s.t[i] - tau; const r = extra.com[i] - v0 - d0 * x; num += r * x * x; den += x ** 4; }
+              c = den > 0 ? num / den : 0;
+            }
+            let sse = 0;
+            for (const i of ground) { const x = s.t[i] - tau; sse += (extra.com[i] - v0 - d0 * x - c * x * x) ** 2; }
+            for (const i of air) sse += (extra.com[i] - val(s.t[i])) ** 2;
+            if (sse < best) { best = sse; bestTau = tau; }
+          }
+          return bestTau;
+        };
+        const which = opts.comEdges ?? "both";
+        if (which !== "landing") { const t = edge(tOff, 1); if (Number.isFinite(t)) tOff = t; }
+        if (which !== "takeoff") { const t = edge(tOn, -1); if (Number.isFinite(t)) tOn = t; }
       }
     }
     if (opts.edges === "hipLeg") {

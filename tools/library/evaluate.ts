@@ -5,6 +5,7 @@
  * Without arguments: today's findJumps. Each variant is run on every set; the table shows accepted/all
  * and the error of the shown height against the flight-time truth (cm).
  */
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { findJumps } from "../../src/analysis/jumps";
 import { toSignals } from "../../src/analysis/signals";
 import type { PoseFrame, PoseVideo } from "../../src/analysis/types";
@@ -73,8 +74,41 @@ export function simSets(finder: Finder): Result[][] {
   run("../review/sim_020914", "heavy", 30, "front, sim 240→30 fps sharp (2026-10-14)");
   run("../review/sim_020914_blur8", "heavy", 30, "front, sim 240→30 fps blur 1/30 (2026-10-14)");
   run("../review/sim_020914", "heavy", 60, "front, sim 240→60 fps sharp (2026-10-14)");
+  run("../review/sim_020914", "heavy", 120, "front, sim 240→120 fps sharp (2026-10-14)");
+  run("../review/sim_020914", "heavy", 240, "front, sim 240 fps sharp (2026-10-14)");
+  run("../review/sim_020914_blur4", "heavy", 60, "front, sim 240→60 fps blur 1/60 (2026-10-14)");
   run("../review/sim_174441_blur4", "heavy", 30, "front, sim 120→30 fps blur 1/30 (2026-10-13)");
   return out;
+}
+
+/**
+ * The 2026-10-19 side clips through the native simulation (tools/library/side_sims.py): one set per
+ * frame rate × blur, every phase of every jump. Truth on the side clip's clock.
+ */
+export function sideSets(finder: Finder): Result[][] {
+  const lib = loadLibrary();
+  if (!lib) return [];
+  const groups: Record<string, Result[]> = {};
+  const blurName: Record<string, string> = { b1: "sharp", b4: "blur 1/60", b8: "blur 1/30" };
+  for (const j of lib.jumps) {
+    const dir = `${LIBRARY}/pose/2026-10-19/side/${j.id}`;
+    if (!j.truth || !existsSync(dir)) continue;
+    for (const b of readdirSync(dir).filter((x) => blurName[x])) {
+      for (const f of readdirSync(`${dir}/${b}`).filter((x) => /^heavy_e\d+_p\d+\.json$/.test(x))) {
+        const every = Number(f.match(/_e(\d+)_/)![1]);
+        const d = JSON.parse(readFileSync(`${dir}/${b}/${f}`, "utf8"));
+        const video: PoseVideo = { width: d.width, height: d.height, fps: 0, frames: d.windows[0].frames };
+        const name = `side, sim 240→${240 / every} fps ${blurName[b]} (2026-10-19)`;
+        const t = { off: j.truth.takeoffT, on: j.truth.landingT, h: j.truth.heightCm / 100 };
+        const best = finder(video).filter((x) => Math.abs(x.tOff - t.off) < 0.5)
+          .sort((a, c) => Math.abs(a.tOff - t.off) - Math.abs(c.tOff - t.off))[0];
+        (groups[name] ??= []).push(best
+          ? { set: name, id: `${j.id}/${b}/${f}`, truth: t.h, found: true, h: best.hPrimary, rejected: best.rejected, dOff: best.tOff - t.off, dOn: best.tOn - t.on, flags: best.flags }
+          : { set: name, id: `${j.id}/${b}/${f}`, truth: t.h, found: false, h: NaN, rejected: true, dOff: NaN, dOn: NaN, flags: [] });
+      }
+    }
+  }
+  return Object.keys(groups).sort().map((k) => groups[k]);
 }
 
 export function summary(rs: Result[]): string {
@@ -88,7 +122,7 @@ export function summary(rs: Result[]): string {
 }
 
 export function evaluateAll(finder: Finder): Result[][] {
-  return [...librarySets().map((s) => runSet(s, finder)), ...simSets(finder)];
+  return [...librarySets().map((s) => runSet(s, finder)), ...simSets(finder), ...sideSets(finder)];
 }
 
 if (process.argv[1]?.endsWith("evaluate.ts")) {
