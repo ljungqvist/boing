@@ -257,7 +257,7 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
     const gImplied = (-2 * hipFit.a) / pxPerMetre;
     const hPfit = (g / 2) * (tApex - tOff) ** 2;
     const hFlight = (g * (tOn - tOff) ** 2) / 8;
-    let hPrimary = hPfit;
+    let hPrimary = Math.min(hPfit, hFlight); // as findJumps: never above the flight-time height
     if (opts.final === "flight") hPrimary = hFlight;
     if (opts.final === "mid") hPrimary = (g / 2) * (tMid - tOff) ** 2;
     if (opts.final === "avg") hPrimary = (g / 2) * ((tApex + tMid) / 2 - tOff) ** 2;
@@ -277,7 +277,7 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
     const scaleChange = wBefore && wAfter ? wAfter / wBefore - 1 : 0;
 
     const j: ExpJump = {
-      tOff, tOn, tApex, hPrimary, hFlight,
+      tOff, tOn, tApex, hPrimary, hRise: hPfit, hFlight,
       airborneFrames: fl.frames.length,
       gImplied,
       hipRmsRel: hipFit.rms / bodyPx,

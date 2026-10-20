@@ -106,7 +106,7 @@ describe("findJumps on synthetic CMJs", () => {
     const lag = 9;
     s.hip = s.hip.map((_, i) => s.hip[Math.max(0, i - lag)]);
     const [j] = findJumps(s);
-    expect(j.hPrimary / j.hFlight).toBeGreaterThan(2);
+    expect(j.hRise / j.hFlight).toBeGreaterThan(2);
     expect(j.flags).toContain("inconsistent");
   });
 
@@ -119,9 +119,24 @@ describe("findJumps on synthetic CMJs", () => {
       return findJumps(s)[0];
     };
     const moved = drift(0.4);
-    expect(moved.hPrimary / moved.hFlight).toBeGreaterThan(1.2);
+    expect(moved.hRise / moved.hFlight).toBeGreaterThan(1.2);
     expect(moved.flags).toContain("inconsistent");
     // A little drift stays within the noise allowance.
     expect(drift(0.1).flags).not.toContain("inconsistent");
+  });
+
+  it("shows at most the flight-time height (a late apex can't make the jump higher)", () => {
+    const drift = (v: number) => {
+      const s = syntheticSignals({ fps: 30, noise: 0.003 });
+      s.hip = s.hip.map((y, i) => y + Math.max(0, s.t[i] - 2) * v * 300);
+      return findJumps(s)[0];
+    };
+    const j = drift(0.2);
+    expect(j.hRise).toBeGreaterThan(1.05 * j.hFlight);
+    expect(j.flags).not.toContain("inconsistent");
+    expect(j.hPrimary).toBe(j.hFlight);
+    // Without drift the takeoff→apex height is shown as it is.
+    const still = drift(0);
+    expect(still.hPrimary).toBe(Math.min(still.hRise, still.hFlight));
   });
 });
