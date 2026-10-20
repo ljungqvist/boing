@@ -21,8 +21,15 @@ export interface Jump {
   tOff: number;
   tOn: number;
   tApex: number;
-  /** Height from takeoff to apex, g/2·(tApex − tOff)², metres. */
+  /**
+   * The height shown, metres: takeoff to apex, g/2·(tApex − tOff)², but at most the flight-time
+   * height. A jump can't land higher than it took off, so a rise above the flight-time height is a
+   * late apex (moving towards the camera in the air, unsteady hip points); the flight time is then
+   * the better of the two (docs/evaluation/2026-10-20-side-view-reference.md).
+   */
   hPrimary: number;
+  /** Takeoff to apex, g/2·(tApex − tOff)², metres, not capped. */
+  hRise: number;
   /** Height from flight time, g·(tOn − tOff)²/8, metres. */
   hFlight: number;
   airborneFrames: number;
@@ -106,11 +113,12 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
 
     const pxPerMetre = bodyPx / (NOSE_TO_HEEL_PER_STATURE * stature);
     const gImplied = (-2 * hipFit.a) / pxPerMetre;
-    const hPrimary = (g / 2) * (tApex - tOff) ** 2;
+    const hRise = (g / 2) * (tApex - tOff) ** 2;
     const hFlight = (g * (tOn - tOff) ** 2) / 8;
+    const hPrimary = Math.min(hRise, hFlight);
 
     const j: Jump = {
-      tOff, tOn, tApex, hPrimary, hFlight,
+      tOff, tOn, tApex, hPrimary, hRise, hFlight,
       airborneFrames: fl.frames.length,
       gImplied,
       hipRmsRel: hipFit.rms / bodyPx,
@@ -128,10 +136,10 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     // read 6–8.5), but a 2× slow-motion clip still reads ≈ 2.5.
     else if (gImplied < 4 || gImplied > 20) j.flags.push("g-implausible");
     if (Math.max(j.hipRmsRel, j.toeRmsRel) > 0.015) j.flags.push("poor-fit");
-    if (Math.abs(hPrimary - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
+    if (Math.abs(hRise - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
     if (j.floorShiftRel > 0.02) j.flags.push("camera-moved");
     if (j.lostRel > MAX_LOST || j.outsideRel > MAX_OUTSIDE) j.flags.push("out-of-view");
-    if (!(Math.max(hPrimary, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hPrimary, hFlight)) || !(hPrimary <= MAX_RISE_OVER_FLIGHT * hFlight))
+    if (!(Math.max(hRise, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hRise, hFlight)) || !(hRise <= MAX_RISE_OVER_FLIGHT * hFlight))
       j.flags.push("inconsistent");
     jumps.push(j);
   }

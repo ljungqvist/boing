@@ -283,7 +283,7 @@ export class LiveController {
         return fallback();
       }
       Object.assign(log, {
-        h: jump.hPrimary, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
+        h: jump.hPrimary, hRise: jump.hRise, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
         offset: jump.tOff - live.tOff, flags: jump.flags,
       });
       const measured: Measured = { jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames };

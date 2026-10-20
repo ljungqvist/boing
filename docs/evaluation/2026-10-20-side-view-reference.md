@@ -47,6 +47,26 @@ Re-measured and accepted, without the drift jump (7): **+1.5 ± 1.7 cm** against
    Candidates (not done): reject when hip width changes > 10 % between standing before and after
    (the 240 fps drift jump of 2026-10-14 had +24 %), or lower `MAX_RISE_OVER_FLIGHT` to 1.15. Both need a
    check on the older sessions first.
+   **Follow-up (changed): the shown height is capped at the flight-time height.** The size change
+   didn't separate drift from normal jumps on the older data (`size_change.ts`): standing before vs after,
+   normal jumps reach ±15–18 % (people shift their stance on landing); in the air (first vs last 70 ms)
+   it is noise at 30 fps (this jump: −7 %). Physics gives a cleaner rule: a jump can't land higher
+   than it took off, so takeoff→apex above the flight-time height means a late apex, and the flight
+   time is then the better estimate. `hPrimary = min(takeoff→apex, flight-time height)`; the uncapped
+   value is kept as `hRise` (consistency flags, diagnostics). Error of the shown height on every set
+   with a truth (`cap_eval.ts`; accepted/all, cm):
+
+   | | today | capped |
+   |---|---|---|
+   | sim 240→30 fps heavy, sharp | 48/56 +3.8 ± 1.1, worst +5.5 | same |
+   | sim 240→30 heavy, blur 1/60 s | 48/56 +4.9 ± 1.7, worst +7.9 | +4.8 ± 1.5, worst +7.2 |
+   | sim 240→30 heavy, blur 1/30 s | 48/56 +5.3 ± 2.1, worst +9.8 | +4.9 ± 1.8, worst +7.2 |
+   | sim 240→60 heavy / 240→30 full / 120→30 heavy | unchanged | unchanged |
+   | native 2026-10-15 table + floor (hand-marked) | 9/13 +1.2 ± 1.8, worst +4.1 | +0.9 ± 1.5, worst +3.5 |
+   | native 2026-10-19 (this session) | 9/10 +2.7 ± 2.9, worst +8.9 | +2.0 ± 2.1, worst +5.4 |
+
+   Never worse, nothing more rejected. The 32.4 cm jump reads 27.5 (truth 23.5). Rejecting above 1.15
+   instead was no better and drops jumps.
 3. **The two "unsteady body points" rejections were right to reject.** Their re-measured heights were
    +10.5 and +5.5 cm off. In the front view the toes plateau for ≈ 6 frames mid-flight (feet pulled up),
    so the whole-flight toe parabola is too wide and its floor crossings too far out (flight +51 ms).
@@ -64,4 +84,5 @@ Re-measured and accepted, without the drift jump (7): **+1.5 ± 1.7 cm** against
 `side_coarse.py` (coarse pose), `side_find.py` (airborne runs), `side_redtoe.py` (240 fps edges from the
 sock toes → `review/side_20261019/edges_redtoe.json`), `side_eval.ts` (logged poses through `findJumps`
 against the truth), `side_drift.py` / `side_scale.py` (drift in the side view, body size in the front
-view), `side_toes.py` (per-frame toe/hip track of a logged jump). Paths point at `../boing-data`.
+view), `side_toes.py` (per-frame toe/hip track of a logged jump), `size_change.ts` (apparent size
+change across every jump at hand), `cap_eval.ts` (capping/rejection variants on every truth set). Paths point at `../boing-data`.
