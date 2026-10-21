@@ -125,6 +125,24 @@ describe("findJumps on synthetic CMJs", () => {
     expect(drift(0.1).flags).not.toContain("inconsistent");
   });
 
+  it("takes the edges along the hips when the feet are pulled up in the air (toe plateau)", () => {
+    // A 30 cm jump; the feet tuck 25 cm in the air (ramps of 60 ms after takeoff and before landing):
+    // the toes no longer fly a parabola, the hips still do.
+    const s = syntheticSignals({ fps: 60, noise: 0.002 });
+    const T = 2 * Math.sqrt((2 * 0.3) / 9.81);
+    s.toe = s.toe.map((y, i) => {
+      const x = s.t[i] - 2;
+      if (x <= 0 || x >= T) return y;
+      return y + 0.25 * 300 * Math.min(1, x / 0.06, (T - x) / 0.06);
+    });
+    const [j] = findJumps(s);
+    expect(j.toeRmsRel).toBeGreaterThan(0.015);
+    expect(j.flags).toContain("toe-plateau");
+    expect(j.flags).not.toContain("poor-fit");
+    expect(Math.abs(j.hFlight - 0.3)).toBeLessThan(0.03);
+    expect(Math.abs(j.hPrimary - 0.3)).toBeLessThan(0.03);
+  });
+
   it("shows at most the flight-time height (a late apex can't make the jump higher)", () => {
     const drift = (v: number) => {
       const s = syntheticSignals({ fps: 30, noise: 0.003 });
