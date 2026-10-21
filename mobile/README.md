@@ -25,6 +25,12 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
 The release APK is signed with the debug key (fine for installing on your own phone).
+
+CI builds every push to `main` and `dev` and publishes the APK on a rolling GitHub release,
+downloadable without a GitHub login:
+
+- main: https://github.com/ljungqvist/boing/releases/latest/download/boing.apk
+- dev: https://github.com/ljungqvist/boing/releases/download/dev-latest/boing-dev.apk
 For development with hot reload: `npx expo run:android` (debug build + Metro).
 
 ## iOS
