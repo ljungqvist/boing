@@ -26,6 +26,8 @@ export interface LiveDeps {
   deleteClip(path: string, hasJumps?: boolean): void;
   /** Motion-sensor samples between two times on the frame clock, if the phone's sensors are read. */
   motion?(from: number, to: number): { acc: Sample[]; gyro: Sample[] };
+  /** The camera's current settings (exposure time, ISO, frame rates) for the diagnostics, if readable. */
+  camera?(): Record<string, unknown> | undefined;
 }
 
 export interface LiveEvents {
@@ -252,6 +254,13 @@ export class LiveController {
     // How the phone stood and whether it moved (debugging; logged with every re-measured jump).
     const m = this.deps.motion?.(live.tOff - 1.5, live.tOn + 1);
     if (m) log.motion = { ...motionSummary(m.acc, m.gyro, live.tOff, live.tOn), acc: m.acc, gyro: m.gyro };
+    // Exposure decides the motion blur of the feet (debugging; may be missing on Android).
+    try {
+      const cam = this.deps.camera?.();
+      if (cam) log.camera = cam;
+    } catch {
+      // diagnostics only
+    }
     if (path) Object.assign(log, { clip: path.split("/").pop(), clipStart: c.start });
     const fallback = () => {
       const m = this.liveMeasurement(live, size);

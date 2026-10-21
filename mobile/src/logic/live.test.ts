@@ -49,6 +49,7 @@ function setup(opts: {
       if (c) Object.assign(c, { deleted: true, hasJumps });
     },
     // A still phone leaning back 30°, read at 100 Hz.
+    camera: () => ({ fps: 30, maxFps: 60, exposureS: 0.01, iso: 400 }),
     motion: (from, to) => ({
       acc: Array.from({ length: Math.round((to - from) * 100) }, (_, i) => [from + i / 100, 0, Math.cos(Math.PI / 6), 0.5] as [number, number, number, number]),
       gyro: [],
@@ -103,6 +104,8 @@ describe("LiveController", () => {
     // With the phone's tilt, and the clip it came from (kept when debugging).
     const measured = s.logs.filter((e) => e.pose);
     expect(measured.every((e) => (e.motion as { tiltDeg: number }).tiltDeg === 30 && typeof e.clip === "string")).toBe(true);
+    // And the camera's exposure (motion blur of the feet).
+    expect(measured.every((e) => (e.camera as { exposureS: number }).exposureS === 0.01)).toBe(true);
     expect(s.clips.filter((c) => c.hasJumps)).toHaveLength(2);
     // Every clip is stopped and deleted in the end.
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
