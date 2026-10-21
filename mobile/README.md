@@ -83,6 +83,18 @@ Results against the web app: `../docs/evaluation/2026-10-14-native-app.md`.
 On an Apple-silicon Mac, use an Android 13 emulator image with `-gpu host`: newer images advertise
 CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path crashes (SIGILL).
 
+## Debug recordings and the local dev server
+
+```
+python3 tools/devserver.py        # http://<this computer>:8765/ on the local network
+```
+
+- Put an APK into `../boing-data/apk/` and open the address on the phone to download and install it.
+- Menu → "Keep recordings of measured jumps": from the next Start, each re-measured jump's clip stays on
+  the phone with a `session.json` (diagnostics, pose per frame, accelerometer/gyroscope around the jump).
+  "Move to computer" uploads them to the server (`../boing-data/uploads/<session>/`) and frees the phone.
+- `npx tsx tools/review/pose_import.ts` turns pose data into landmark files for the review tools.
+
 ## Native module
 
 After changing `modules/react-native-boing-pose/src/specs/BoingPose.nitro.ts`, run `npm run specs`

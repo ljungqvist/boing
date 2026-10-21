@@ -157,7 +157,23 @@
     "source": "own recording (Android), 2026-10-13",
     "view": "front, phone on floor tilted up",
     "arms": "hips",
-    "notes": "Samsung slow motion: captured at 120 fps, stored at 29.61 fps playback (time scale read from metadata). Phone on floor tilted up, socks. No reference."
+    "notes": "Samsung slow motion: captured at 120 fps, stored at 29.61 fps playback (time scale read from metadata). Phone on floor tilted up, socks on a wooden floor.",
+    "reference": {
+      "unit": "cm",
+      "method": "hand-marked at 120 fps from feet crops (2026-10-15): takeoff = last foot off, landing = first foot down (flight time), about ±1 frame (8 ms) per edge",
+      "times_s": [
+        2.606,
+        6.03
+      ],
+      "flight_ms": [
+        429,
+        408
+      ],
+      "values": [
+        22.6,
+        20.4
+      ]
+    }
   },
   {
     "id": "own-20261013_174604",
@@ -165,7 +181,23 @@
     "source": "own recording (Android), 2026-10-13",
     "view": "front, phone on floor tilted up",
     "arms": "hips",
-    "notes": "4K 60 fps constant. Phone on floor tilted up, socks, 2 jumps. No reference."
+    "notes": "4K 60 fps constant. Phone on floor tilted up, socks on a wooden floor, 2 jumps.",
+    "reference": {
+      "unit": "cm",
+      "method": "hand-marked at 60 fps from feet crops (2026-10-15): takeoff = last foot off, landing = first foot down (flight time), about ±1 frame (17 ms) per edge",
+      "times_s": [
+        2.276,
+        5.593
+      ],
+      "flight_ms": [
+        450,
+        432
+      ],
+      "values": [
+        24.8,
+        22.9
+      ]
+    }
   },
   {
     "id": "own-VID-20261013-WA0000",

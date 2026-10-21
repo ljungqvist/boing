@@ -1,4 +1,5 @@
 import "./style.css";
+import { discardFeedback } from "../analysis/discard";
 import { findJumps, type Jump, type JumpFlag } from "../analysis/jumps";
 import { toSignals } from "../analysis/signals";
 import { JumpTracker } from "../analysis/tracker";
@@ -11,7 +12,7 @@ import { withTimeout } from "./load";
 import { ICONS, renderIcons } from "./icons";
 import { Pose, type ModelKind } from "./pose";
 import { choosePiece, RollingRecorder } from "./recorder";
-import { AFTER, BEFORE, REJECT, Refiner, type RefineResult } from "./refiner";
+import { AFTER, BEFORE, MOVEMENT_REJECT, REJECT, Refiner, type RefineResult } from "./refiner";
 
 const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "not-parabola": "no free-fall curve",
@@ -19,6 +20,7 @@ const REJECT_TEXT: Partial<Record<JumpFlag, string>> = {
   "g-implausible": "speed doesn't match gravity",
   "out-of-view": "not fully in view",
   "inconsistent": "inconsistent flight",
+  "poor-fit": "unsteady body points",
 };
 /**
  * Notes shown with a result. Only about the setup, never about how to jump:
@@ -187,6 +189,8 @@ const LIVE_ONLY: Measurement = { refined: false, approximate: false, framesLive:
 function addResult(
   j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number }, live: boolean,
   how: Measurement = { ...LIVE_ONLY, framesLive: j.airborneFrames },
+  /** The jump was measured again from the recording (whatever the result), not just by the live tracker. */
+  remeasured = false,
 ) {
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   app.results.push({ hPrimary: j.hPrimary, hFlight: j.hFlight, flight: j.tOn - j.tOff, fps, flags: j.flags, accepted, ...how });
@@ -198,6 +202,14 @@ function addResult(
     const item = document.createElement("li");
     item.textContent = `at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm, g ${j.gImplied.toFixed(1)})`;
     ignoredEl.querySelector("ul")!.prepend(item);
+    if (live) {
+      // Say so only if the recording was re-measured and still gave no height; live rejects stay silent.
+      const action = discardFeedback({ refined: remeasured, pending });
+      if (action === "failure") {
+        showFlashText("Couldn't measure", "failed");
+        feedback.announceFailure();
+      } else if (action === "clear-measuring" && flash.classList.contains("measuring")) flash.hidden = true;
+    }
     return;
   }
   jumps.push({ jump: j, signals: toSignals({ ...size, fps, frames }), fps, how });
@@ -208,9 +220,13 @@ function addResult(
   }
 }
 
-/** Live jumps worth measuring again: accepted ones, and ones rejected only for having too few frames. */
+/**
+ * Live jumps worth measuring again: accepted ones, and ones rejected only for what more frames can
+ * fix (too few frames, noisy points or edges at the live frame rate).
+ */
+const REFINABLE: JumpFlag[] = ["few-frames", "inconsistent", "poor-fit"];
 function refinable(j: Jump): boolean {
-  return j.flags.filter((f) => REJECT.includes(f)).every((f) => f === "few-frames");
+  return j.flags.filter((f) => REJECT.includes(f)).every((f) => REFINABLE.includes(f));
 }
 
 /**
@@ -254,15 +270,21 @@ async function refineLive(
       refined: { width: result.size.width, height: result.size.height, fps: result.fps, start: piece!.start, frames: result.frames },
     });
     addResult(r, result.fps, result.frames, result.size, true,
-      { refined: true, approximate: false, framesLive: j.airborneFrames, framesRefined: r.airborneFrames });
+      { refined: true, approximate: false, framesLive: j.airborneFrames, framesRefined: r.airborneFrames }, true);
     return;
   }
   Object.assign(log, { error: result.error, flags: result.flags });
+  if (result.flags?.some((f) => MOVEMENT_REJECT.includes(f))) {
+    // The movement itself can't be measured: listed as ignored (with the re-measured heights, at the live
+    // time), the live height isn't shown instead.
+    const r = result.rejected ?? j;
+    addResult({ ...r, tOff: j.tOff, tOn: j.tOn, flags: result.flags }, fps, frames, size, true, { ...LIVE_ONLY, framesLive: j.airborneFrames }, true);
+    return;
+  }
   console.warn("refinement failed, using the live result", result);
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   addResult(j, fps, frames, size, true,
     { refined: false, approximate: accepted, framesLive: j.airborneFrames, framesRefined: null });
-  if (!accepted && pending === 0) flash.hidden = true; // it was "Measuring…"
 }
 
 function renderSession() {
@@ -310,7 +332,7 @@ function showDetails(i: number) {
 /** The latest height in large type on top of the video, for a few seconds. */
 function showFlash(h: number, approximate = false) {
   flash.innerHTML = `${approximate ? "≈" : ""}${(h * 100).toFixed(1)}<small>cm</small>`;
-  flash.classList.remove("measuring");
+  flash.classList.remove("measuring", "failed");
   flash.hidden = false;
   flash.style.animation = "none";
   void flash.offsetWidth; // restart the pop-in animation
@@ -324,7 +346,21 @@ function showMeasuring() {
   clearTimeout(flashTimer);
   flash.textContent = "Measuring…";
   flash.classList.add("measuring");
+  flash.classList.remove("failed");
   flash.hidden = false;
+}
+
+/** A message in the flash's place for a few seconds (e.g. no height could be determined). */
+function showFlashText(text: string, cls: string) {
+  flash.textContent = text;
+  flash.classList.remove("measuring", "failed");
+  flash.classList.add(cls);
+  flash.hidden = false;
+  flash.style.animation = "none";
+  void flash.offsetWidth; // restart the pop-in animation
+  flash.style.animation = "";
+  clearTimeout(flashTimer);
+  flashTimer = window.setTimeout(() => (flash.hidden = true), FLASH_MS);
 }
 
 /** Toes clearly above where they stood during the last two seconds. */

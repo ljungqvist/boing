@@ -25,6 +25,15 @@ export class Feedback {
     }
   }
 
+  /** A movement was seen but no height could be determined. */
+  announceFailure(): void {
+    if (!this.enabled || !("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance("Couldn't determine the height");
+    u.lang = "en-US";
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }
+
   private beep(): void {
     const ctx = this.audio;
     if (!ctx) return;

@@ -3,17 +3,19 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, TextInput, View } from "react-native";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
-import { describeLog, diagnosticsReport } from "./logic/diagnostics";
+import { discardFeedback } from "../../src/analysis/discard";
+import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
-import { announce } from "./native/feedback";
+import { deleteSessions, keptSummary, loadSettings, newSessionId, saveSettings, sendSessions, writeSession } from "./native/debug";
+import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
@@ -24,7 +26,7 @@ import { C } from "./ui/theme";
 const FLASH_MS = 5000;
 
 type Mode = "idle" | "live" | "file";
-type Flash = { text: string; measuring: boolean } | null;
+type Flash = { text: string; measuring: boolean; failed?: boolean } | null;
 
 export default function App() {
   return (
@@ -72,6 +74,20 @@ function Main() {
   useEffect(() => {
     if (testing.current) appendTestLog(status.text);
   }, [status]);
+  // Debug: keep the clips of measured jumps with the session's data, and send them to a computer.
+  const [settings, setSettings] = useState(() => loadSettings());
+  const keep = settings.keep === true;
+  const server = typeof settings.server === "string" ? settings.server : "http://192.168.86.18:8765";
+  const updateSettings = (patch: Record<string, unknown>) =>
+    setSettings((old) => {
+      const next = { ...old, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  const [debugSession, setDebugSession] = useState<string | null>(null);
+  const keptClips = useRef<string[]>([]);
+  const [kept, setKept] = useState(() => keptSummary());
+  const [sendStatus, setSendStatus] = useState("");
 
   const showFlash = useCallback((f: Flash, ms = FLASH_MS) => {
     clearTimeout(flashTimer.current);
@@ -92,7 +108,14 @@ function Main() {
     if (!accepted(j)) {
       const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
       setIgnored((xs) => [`at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm)`, ...xs]);
-      if (live && controller.current?.pending === 0) setFlash((f) => (f?.measuring ? null : f));
+      if (live) {
+        // Say so only if the recording was re-measured and still gave no height; live rejects stay silent.
+        const feedback = discardFeedback({ refined: m.refined, pending: controller.current?.pending ?? 0 });
+        if (feedback === "failure") {
+          showFlash({ text: "Couldn't measure", measuring: false, failed: true });
+          announceFailure(soundRef.current);
+        } else if (feedback === "clear-measuring") setFlash((f) => (f?.measuring ? null : f));
+      }
       return;
     }
     setResults((xs) => [...xs, m]);
@@ -110,8 +133,15 @@ function Main() {
       addResult(m, true);
     },
     log: (e) => {
-      console.log(`BOING_LOG ${JSON.stringify(e)}`);
-      setLogs((xs) => [e, ...xs].slice(0, 50));
+      console.log(`BOING_LOG ${JSON.stringify({ ...e, pose: undefined, motion: undefined })}`);
+      setLogs((xs) => {
+        const next = [e, ...xs].slice(0, 50);
+        if (debugSession) {
+          writeSession(debugSession, debugPackage(deviceContext(facing, lastInfo.current), next, keptClips.current));
+          setKept(keptSummary());
+        }
+        return next;
+      });
     },
   };
 
@@ -129,11 +159,13 @@ function Main() {
       return;
     }
     clear();
+    keptClips.current = [];
+    setDebugSession(keep ? newSessionId() : null);
     setSession((n) => n + 1);
     setMode("live");
     setStatus({ text: "Starting the camera…", tone: "idle" });
     void activateKeepAwakeAsync().catch(() => {});
-  }, [permission, clear]);
+  }, [permission, clear, keep]);
 
   const fail = useCallback((e: unknown) => {
     console.warn(e);
@@ -235,6 +267,11 @@ function Main() {
             onStep={(text) => setStatus({ text, tone: "idle" })}
             onError={fail}
             onInfo={setInfo}
+            debugSession={debugSession}
+            onKeptClip={(name) => {
+              keptClips.current.push(name);
+              setKept(keptSummary());
+            }}
           />
         )}
         {!live && results.length === 0 && mode !== "file" && (
@@ -268,8 +305,8 @@ function Main() {
         {flash && (
           <View style={s.flashWrap} pointerEvents="none">
             <View style={s.flashBox}>
-              {flash.measuring ? (
-                <Text style={s.flashMeasuring}>{flash.text}</Text>
+              {flash.measuring || flash.failed ? (
+                <Text style={flash.failed ? s.flashFailed : s.flashMeasuring}>{flash.text}</Text>
               ) : (
                 <Text style={s.flash}>
                   {flash.text}
@@ -355,11 +392,62 @@ function Main() {
               <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
                 <Text style={s.wideText}>Share diagnostics</Text>
               </Pressable>
+              {logs.some((e) => e.pose) && (
+                <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs, true)}>
+                  <Text style={s.wideText}>Share pose data (latest 8 jumps)</Text>
+                </Pressable>
+              )}
               {logs.map((e, i) => (
                 <Text key={i} style={s.diag}>{describeLog(e)}</Text>
               ))}
             </>
           )}
+          <Text style={s.sectionTitle}>Debug recordings</Text>
+          <Pressable style={s.wide} onPress={() => updateSettings({ keep: !keep })}>
+            <Text style={s.wideText}>Keep recordings of measured jumps: {keep ? "on" : "off"}</Text>
+          </Pressable>
+          <Text style={s.hint}>
+            {keep ? "From the next Start, each measured jump's video, pose and motion data stay on the phone. " : ""}
+            Kept: {kept.files} file{kept.files === 1 ? "" : "s"} in {kept.sessions} session{kept.sessions === 1 ? "" : "s"}, {kept.mb} MB.
+          </Text>
+          {kept.files > 0 && (
+            <>
+              <TextInput
+                style={s.input}
+                value={server}
+                onChangeText={(v) => updateSettings({ server: v.trim() })}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="http://computer:8765"
+                placeholderTextColor={C.muted}
+              />
+              <Pressable
+                style={s.wide}
+                disabled={sendStatus.startsWith("Sending")}
+                onPress={() => {
+                  setSendStatus("Sending…");
+                  sendSessions(server, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
+                    .then((n) => setSendStatus(`Sent ${n} file${n === 1 ? "" : "s"}; removed from the phone.`))
+                    .catch((e) => setSendStatus(`Couldn't send: ${String((e as Error)?.message ?? e)}`))
+                    .finally(() => setKept(keptSummary()));
+                }}
+              >
+                <Text style={s.wideText}>Move to computer</Text>
+              </Pressable>
+              <Pressable
+                style={s.wide}
+                onPress={() => {
+                  deleteSessions();
+                  setKept(keptSummary());
+                  setSendStatus("");
+                }}
+              >
+                <Text style={s.wideText}>Delete kept recordings</Text>
+              </Pressable>
+            </>
+          )}
+          {sendStatus !== "" && <Text style={s.hint}>{sendStatus}</Text>}
           {ignored.length > 0 && (
             <>
               <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
@@ -407,19 +495,10 @@ function appendTestLog(text: string) {
   }
 }
 
-/** Shares the diagnostics as text (e.g. to a chat or e-mail). */
-async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[]) {
-  const c = Platform.constants as Record<string, unknown>;
-  // Android: brand and model; iOS only tells phone or tablet ("pad").
-  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || [Platform.OS, c.interfaceIdiom].filter(Boolean).join(" ");
-  const context = {
-    time: new Date().toISOString(),
-    device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,
-    camera: facing,
-    "camera frame rate": info?.fps ? `${Math.round(info.fps)} fps` : "–",
-    "pose delegate": info?.delegate || "–",
-  };
-  await Share.share({ message: diagnosticsReport(context, logs) }).catch(() => {});
+/** Shares the diagnostics as text (e.g. to a chat or e-mail); `pose`: the re-measured jumps' pose data instead. */
+async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: Record<string, unknown>[], pose = false) {
+  const context = deviceContext(facing, info);
+  await Share.share({ message: pose ? poseReport(context, logs) : diagnosticsReport(context, logs) }).catch(() => {});
 }
 
 const pillStyle = (t: Tone) =>
@@ -450,6 +529,7 @@ const s = StyleSheet.create({
   flash: { color: C.text, fontSize: 88, fontWeight: "800", fontVariant: ["tabular-nums"] },
   flashUnit: { fontSize: 28, fontWeight: "500", color: C.muted },
   flashMeasuring: { color: C.muted, fontSize: 36, fontWeight: "600", paddingVertical: 8 },
+  flashFailed: { color: C.text, fontSize: 36, fontWeight: "700", paddingVertical: 8, textAlign: "center" },
   bottom: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 12, backgroundColor: "rgba(0,0,0,0.35)" },
   session: {
     backgroundColor: C.surface, borderColor: C.line, borderWidth: 1, borderRadius: 16,
@@ -477,7 +557,22 @@ const s = StyleSheet.create({
   sectionTitle: { color: C.text, fontWeight: "600", marginTop: 16, marginBottom: 4 },
   hint: { color: C.muted, fontSize: 13, marginTop: 12, lineHeight: 19 },
   diag: { color: C.muted, fontSize: 12, marginTop: 6, fontVariant: ["tabular-nums"] },
+  input: { marginTop: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.muted, color: C.text, fontSize: 15 },
   wide: { marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: C.accent, alignItems: "center" },
   wideText: { color: "#1f0d00", fontWeight: "700", fontSize: 15 },
   trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
 });
+
+/** Phone, camera and time, at the top of diagnostics and debug packages. */
+function deviceContext(facing: string, info: CameraInfo | null): Record<string, unknown> {
+  const c = Platform.constants as Record<string, unknown>;
+  // Android: brand and model; iOS only tells phone or tablet ("pad").
+  const device = [c.Brand, c.Model].filter(Boolean).join(" ") || [Platform.OS, c.interfaceIdiom].filter(Boolean).join(" ");
+  return {
+    time: new Date().toISOString(),
+    device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,
+    camera: facing,
+    "camera frame rate": info?.fps ? `${Math.round(info.fps)} fps` : "–",
+    "pose delegate": info?.delegate || "–",
+  };
+}

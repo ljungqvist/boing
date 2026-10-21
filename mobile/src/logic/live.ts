@@ -1,8 +1,10 @@
 import type { Jump } from "../../../src/analysis/jumps";
 import { JumpTracker } from "../../../src/analysis/tracker";
 import type { PoseFrame } from "../../../src/analysis/types";
-import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, PAD, REJECT, refinable } from "./measure";
+import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
 import type { Size } from "./pose";
+import { compactPose } from "./diagnostics";
+import { motionSummary, type Sample } from "./motion";
 import { liveStatus, type Status } from "./status";
 import type { Measured } from "./video";
 
@@ -20,7 +22,12 @@ export interface LiveDeps {
    * facts about the recorded file (size, rotation, frame rate) for the diagnostics.
    */
   analyzeClip(path: string, from: number, to: number): Promise<{ frames: PoseFrame[]; size: Size; video?: Record<string, unknown> }>;
-  deleteClip(path: string): void;
+  /** Deletes a finished clip (`hasJumps`: it was measured; a debug setting may keep those). */
+  deleteClip(path: string, hasJumps?: boolean): void;
+  /** Motion-sensor samples between two times on the frame clock, if the phone's sensors are read. */
+  motion?(from: number, to: number): { acc: Sample[]; gyro: Sample[] };
+  /** The camera's current settings (exposure time, ISO, frame rates) for the diagnostics, if readable. */
+  camera?(): Record<string, unknown> | undefined;
 }
 
 export interface LiveEvents {
@@ -36,8 +43,13 @@ export interface LiveEvents {
 export interface LiveOptions {
   /** Record clips and measure each jump again from every recorded frame. */
   record?: boolean;
-  /** Seconds after which a clip without jumps is replaced by a new one (keeps files small). */
+  /**
+   * Seconds after which a clip without jumps is replaced by a new one (keeps files small), once
+   * nobody is in the picture. Replacing it leaves a moment that can't be re-measured.
+   */
   rotateSeconds?: number;
+  /** … and while someone is in the picture (and may be about to jump), only after this many seconds. */
+  rotateSecondsInView?: number;
   /** Give up re-measuring a jump after this many milliseconds. */
   timeoutMs?: number;
 }
@@ -64,6 +76,7 @@ export class LiveController {
   private firstT = NaN;
   private lastT = NaN;
   private lastAir = -Infinity;
+  private lastPerson = -Infinity;
   private clip: OpenClip | null = null;
   private starting = false;
   /** After a failed recording start, wait until this frame time before trying again. */
@@ -72,6 +85,7 @@ export class LiveController {
   private stopped = false;
   private readonly record: boolean;
   private readonly rotateSeconds: number;
+  private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
   /** Jumps waiting for their re-measured height. */
   pending = 0;
@@ -79,6 +93,7 @@ export class LiveController {
   constructor(private readonly deps: LiveDeps, private readonly events: LiveEvents, opts: LiveOptions = {}) {
     this.record = opts.record ?? true;
     this.rotateSeconds = opts.rotateSeconds ?? 15;
+    this.rotateSecondsInView = opts.rotateSecondsInView ?? 60;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
   }
 
@@ -109,6 +124,7 @@ export class LiveController {
 
     const status = liveStatus(this.history, frame.lm, this.fps, t - this.firstT > 2);
     if (status.tone === "air") this.lastAir = t;
+    if (frame.lm) this.lastPerson = t;
     this.events.status(status);
 
     for (const j of this.tracker.push(frame, size)) this.onJump(j, size);
@@ -120,8 +136,12 @@ export class LiveController {
     }
     const c = this.clip;
     const lastEnd = Math.max(...c.jumps.map((j) => j.tOn + AFTER + PAD));
-    // A clip with jumps ends once it covers them; one without is replaced now and then.
-    if (c.jumps.length > 0 ? t >= lastEnd : t - c.start > this.rotateSeconds && t - this.lastAir > 2) void this.rotate();
+    // A clip with jumps ends once it covers them; one without is replaced now and then. Not soon while
+    // someone is in the picture: people jump every 15–20 s (after hearing the height), and a new clip
+    // started in the countermovement lacks the standing before the takeoff.
+    const age = t - c.start;
+    const quiet = t - this.lastAir > 2 && (t - this.lastPerson > 1 ? age > this.rotateSeconds : age > this.rotateSecondsInView);
+    if (c.jumps.length > 0 ? t >= lastEnd : quiet) void this.rotate();
   }
 
   /** Stops measuring; jumps already recorded are still measured. */
@@ -160,7 +180,7 @@ export class LiveController {
     try {
       const clip = await this.deps.startClip();
       if (this.stopped) {
-        this.deps.deleteClip(await clip.stop());
+        this.deps.deleteClip(await clip.stop(), false);
         return;
       }
       this.clip = { clip, start: this.lastT, jumps: [] };
@@ -204,27 +224,48 @@ export class LiveController {
   /** Measures a finished clip's jumps (one at a time), then deletes it. */
   private async measure(c: OpenClip, path: string | null) {
     const job = this.queue.then(async () => {
-      for (const j of c.jumps) {
-        await this.refine(j, c, path);
-        this.pending--;
+      let done = 0;
+      try {
+        for (const j of c.jumps) {
+          const { measured, log } = await this.refine(j, c, path);
+          // Not pending any more when the result arrives (the app clears "Measuring…" at zero).
+          this.pending--;
+          done++;
+          this.events.log?.(log);
+          this.events.result(measured);
+        }
+      } finally {
+        // Even if a result handler throws: nothing stays pending, the clip is deleted.
+        this.pending -= c.jumps.length - done;
+        if (path) this.deps.deleteClip(path, c.jumps.length > 0);
       }
-      if (path) this.deps.deleteClip(path);
     });
     this.queue = job.catch(() => {});
     await job;
   }
 
-  private async refine(live: Jump, c: OpenClip, path: string | null) {
+  /** Measures one live jump again from its clip; falls back to the live measurement. */
+  private async refine(live: Jump, c: OpenClip, path: string | null): Promise<{ measured: Measured; log: Record<string, unknown> }> {
     const size = { width: 0, height: 0 };
     const log: Record<string, unknown> = {
       tOff: live.tOff, hLive: live.hPrimary, framesLive: live.airborneFrames, gLive: live.gImplied, flagsLive: live.flags,
       fpsLive: this.fps,
     };
+    // How the phone stood and whether it moved (debugging; logged with every re-measured jump).
+    const m = this.deps.motion?.(live.tOff - 1.5, live.tOn + 1);
+    if (m) log.motion = { ...motionSummary(m.acc, m.gyro, live.tOff, live.tOn), acc: m.acc, gyro: m.gyro };
+    // Exposure decides the motion blur of the feet (debugging; may be missing on Android).
+    try {
+      const cam = this.deps.camera?.();
+      if (cam) log.camera = cam;
+    } catch {
+      // diagnostics only
+    }
+    if (path) Object.assign(log, { clip: path.split("/").pop(), clipStart: c.start });
     const fallback = () => {
       const m = this.liveMeasurement(live, size);
       m.approximate = accepted(live);
-      this.events.log?.(log);
-      this.events.result(m);
+      return { measured: m, log };
     };
     if (!path) {
       log.error = "no-recording";
@@ -241,6 +282,8 @@ export class LiveController {
       const frames = r.frames.map((f) => ({ t: f.t + c.start, lm: f.lm }));
       const fps = frameRate(frames);
       Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video });
+      // For offline analysis (shared separately, see poseReport).
+      log.pose = compactPose(frames, r.size);
       const found = jumpsIn(frames, r.size);
       const jump = closestJump(found, live.tOff);
       if (!jump) {
@@ -249,19 +292,22 @@ export class LiveController {
         return fallback();
       }
       Object.assign(log, {
-        h: jump.hPrimary, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
+        h: jump.hPrimary, hRise: jump.hRise, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
         offset: jump.tOff - live.tOff, flags: jump.flags,
       });
+      const measured: Measured = { jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames };
       if (jump.flags.some((f) => REJECT.includes(f))) {
         log.error = "rejected";
+        // The movement itself can't be measured (moved, left the picture, unsteady points): the live
+        // result of the same movement isn't shown instead. A doubtful recording (time base) falls back.
+        if (jump.flags.some((f) => MOVEMENT_REJECT.includes(f))) return { measured, log };
         return fallback();
       }
-      this.events.log?.(log);
-      this.events.result({ jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames });
+      return { measured, log };
     } catch (e) {
       log.ms = Date.now() - t0;
       log.error = String((e as Error)?.message ?? e);
-      fallback();
+      return fallback();
     }
   }
 }
