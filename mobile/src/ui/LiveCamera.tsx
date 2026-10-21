@@ -3,6 +3,7 @@ import { StyleSheet } from "react-native";
 import { boingPose, type PoseDetector } from "react-native-boing-pose";
 import {
   Camera,
+  type CameraRef,
   type CameraSessionConfig,
   type Frame,
   useCameraDevice,
@@ -54,6 +55,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   /** Model for re-measuring jumps from the recording: heavy (steadier feet, see docs/evaluation). */
   const measureModel = useRef<string | null>(null);
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
+  const cameraRef = useRef<CameraRef>(null);
+  const maxFps = useMemo(() => (device ? Math.max(0, ...device.supportedFPSRanges.map((r) => r.max)) : 0), [device]);
   const eventsRef = useRef(events);
   eventsRef.current = events;
   const debugRef = useRef({ debugSession, onKeptClip });
@@ -139,6 +142,13 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           else deleteQuietly(path);
         },
         motion: (from, to) => ({ acc: acc.window(from, to), gyro: gyro.window(from, to) }),
+        camera: () => {
+          const c = cameraRef.current?.controller;
+          return {
+            fps: info.current.fps, maxFps,
+            ...(c ? { exposureS: c.exposureDuration, iso: c.iso, exposureMode: c.exposureMode } : {}),
+          };
+        },
       },
       {
         status: (s) => eventsRef.current.status(s),
@@ -149,7 +159,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       // The heavy model takes several seconds per jump on a mid-range phone.
       { timeoutMs: 60_000 },
     );
-  }, [detector, videoOutput, acc, gyro]);
+  }, [detector, videoOutput, acc, gyro, maxFps]);
 
   useEffect(() => {
     controllerRef.current = controller;
@@ -195,6 +205,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   return (
     <>
       <Camera
+        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         isActive
         device={device}

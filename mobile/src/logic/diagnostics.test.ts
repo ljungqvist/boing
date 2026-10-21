@@ -16,6 +16,15 @@ describe("describeLog", () => {
     );
   });
 
+  it("shows the camera's exposure and frame rates when they were read", () => {
+    const e = { tOff: 1, hLive: 0.3, framesLive: 9, h: 0.28, frames: 14, fps: 30, ms: 800, offset: 0.01,
+      camera: { fps: 30, maxFps: 60, exposureS: 1 / 120, iso: 640 } };
+    expect(describeLog(e)).toBe("t 1.0 s · live 30.0 cm (9 fr) → 28.0 cm (14 fr, 30 fps, 800 ms, offset 0.01 s)"
+      + " · exposure 1/120 s, ISO 640, camera 30 fps (max 60)");
+    // Android may not report exposure: only the frame rates.
+    expect(describeLog({ ...e, camera: { fps: 30, maxFps: 30, exposureS: 0, iso: 0 } })).toContain("· camera 30 fps (max 30)");
+  });
+
   it("lists the movements found when none matched the live jump", () => {
     const e = { tOff: 3, hLive: 0.2, framesLive: 9, error: "no-match", ms: 900, analysed: 70, withPose: 0, fps: 30, found: [] };
     expect(describeLog(e)).toContain("movements found: none");
