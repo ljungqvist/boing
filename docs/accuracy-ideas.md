@@ -74,6 +74,39 @@ Side view: more jumps measured, those read a little high (+0.2 cm mean, worst +1
 front-first app. The centre of mass helps the tucked jumps only partly (logged poses lack arms; the hips
 already fly a parabola), so it isn't the fix here.
 
+### 2026-10-21: centre of mass with other pose models, at 60 fps (no gain from the centre of mass)
+
+Pose of the same jumps from five models (`tools/library/pose_sources.py`, `vitpose_source.py`;
+library files `pose/…/<id>_front_<model>.json`, `side/<id>/<model>.json`): the app's MediaPipe heavy
+(540×960, 13 logged points), MediaPipe heavy at full resolution (33 points), RTMPose-x body with feet
+(Halpe26), RTMW whole body (x, l, m; COCO-WholeBody 133 points incl. big/small toe and heel), ViTPose++
+huge (COCO 17, no feet: ankles used as feet). Sets: 2026-10-21 front 60 fps (8, hand-marked),
+2026-10-19 side thinned to 60 fps (12 × 4 phases, sock-toe truth), 2026-10-19 front 30 fps (10).
+Centre of mass (de Leva; hidden side mirrored from the visible one, `tools/review/com.ts`) as apex,
+hinge (both edges / takeoff / landing), and a new **joint fit** (parabola and edges together, the ground
+as tangent lines; `comGround: "joint"`; curved ground `"jointq"`). `tools/library/com_eval.ts`.
+
+Today's method (no centre of mass) on each model's pose:
+
+| | app's MediaPipe | MP full-res | RTMPose-halpe | **RTMW-x** | RTMW-l | RTMW-m | ViTPose (ankles) |
+|---|---|---|---|---|---|---|---|
+| front 60 fps | +2.2 ± 1.3, w +3.4 | +1.8 ± 1.1 | +1.8 ± 0.9 (6/8) | **+1.5 ± 0.9, w +2.5** | +1.9 ± 0.7 | +2.6 ± 0.9 | +8.3 ± 2.4 |
+| side 60 fps | +2.0 ± 2.2, w +6.5 | +2.8 ± 2.1 | +4.2 ± 1.2 | **+0.5 ± 1.4, w +3.8** | +1.6 ± 1.5 | +1.4 ± 2.4 | +14.1 ± 3.9 |
+| front 30 fps (720p) | +1.7 ± 2.1, w +5.4 | | | +2.1 ± 3.5, w +9.3 | +3.7 ± 3.9 | +3.3 ± 3.9 | |
+
+- **The centre of mass doesn't help at 60 fps with any model**: as the apex it is no better or worse;
+  hinges on both edges or the takeoff are worse (outliers up to +16–20 cm). Physics: the floor's push
+  fades smoothly at takeoff, so the centre of mass has no sharp kink to find there.
+- **Joint fit, landing only** is better everywhere it was tried (app's pose: front +2.2 → +1.0 ± 1.1,
+  side +2.0 → +1.0 ± 1.9; RTMW-x: front −0.1 ± 1.0, side −0.0 ± 1.2), **but** it depends strongly on the
+  ground window (0.1 / 0.15 / 0.2 s: no change / −1 cm / −3 cm and many rejections), the physically
+  right curved ground model is unstable, and a plain **landing 20 ms earlier** does about as well with
+  the app's pose (front 60 fps +1.5 ± 1.1, side +1.2 ± 1.8, front 30 fps +0.3 ± 2.3, every set better). So
+  it mainly corrects the toe point's late landing (25–39 ms), a calibration — not shipped yet.
+- **The model matters more than the centre of mass**: RTMW-x is the best at 60 fps on 1080p (its foot
+  points are real toes), but worse than MediaPipe at 30 fps on 720p (per image, no tracking; small feet),
+  and the smaller RTMW-l/m (the ones a phone could run) lose most of the gain. Not for the app now.
+
 ## To test, ranked
 
 ### 1. A pose model that finds the toe tip — tested, no gain (2026-10-21)

@@ -42,7 +42,7 @@ export interface ExpOptions {
   /** comHinge: which edges come from the centre of mass (others stay toe-based). */
   comEdges?: "both" | "takeoff" | "landing";
   /** comHinge: the ground phase next to the flight: tangent line (C1, no acceleration) or C1 + own curvature. */
-  comGround?: "line" | "quad";
+  comGround?: "line" | "quad" | "joint" | "jointq";
   /** comHinge: seconds of ground phase used next to each edge. */
   comWindow?: number;
   /** knee: half-width of the data window around the run edge (s). */
@@ -83,7 +83,10 @@ export function extraSignals(video: PoseVideo, minVis = 0.5) {
   for (const f of video.frames) {
     const lm = f.lm;
     trunk.push(ok(lm, [11, 12, 23, 24]) ? H - trunkY(lm!) * H : NaN);
-    com.push(ok(lm, [11, 12, 23, 24, 25, 26, 27, 28]) ? H - comY(lm!) * H : NaN);
+    // One of each pair is enough (comY mirrors the hidden side).
+    const either = (l: Landmark[] | null) => !!l && [[11, 12], [23, 24], [25, 26], [27, 28]].every(([a, b]) => l[a][3] >= minVis || l[b][3] >= minVis);
+    const c = either(lm) ? comY(lm!) : NaN;
+    com.push(Number.isFinite(c) ? H - c * H : NaN);
     width.push(ok(lm, [11, 12, 23, 24]) ? (Math.hypot((lm![11][0] - lm![12][0]) * W, (lm![11][1] - lm![12][1]) * H) + Math.hypot((lm![23][0] - lm![24][0]) * W, (lm![23][1] - lm![24][1]) * H)) : NaN);
   }
   return { trunk, com, width };
@@ -160,7 +163,7 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
 
     // As findJumps: a toe plateau (feet pulled up) takes its edges along the hips.
     let plateau = false;
-    if (!opts.edges && toeFit.rms / bodyPx > POOR_FIT && hipFit.rms / bodyPx <= POOR_FIT && hipFit.a < 0) {
+    if ((!opts.edges || opts.edges === "comHinge") && toeFit.rms / bodyPx > POOR_FIT && hipFit.rms / bodyPx <= POOR_FIT && hipFit.a < 0) {
       const e = hipEdges(s, fl.frames, hipFit, levelOff, levelOn, bodyPx);
       if (e) {
         const rise = (g / 2) * (hipFit.vertex - e.tOff) ** 2, flight = (g * (e.tOn - e.tOff) ** 2) / 8;
@@ -276,9 +279,47 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
           }
           return bestTau;
         };
+        if (opts.comGround === "joint" || opts.comGround === "jointq") {
+          const curved = opts.comGround === "jointq";
+          // Parabola and both edges together: y = P(t) in the air, the tangent of P at the edge on the
+          // ground; linear in P's coefficients for fixed edges, edges on a 2 ms grid around the toe edges.
+          const frames: number[] = [];
+          for (let i = 0; i < n; i++) if (Number.isFinite(extra.com[i]) && s.t[i] > tOff - 0.08 - Wg && s.t[i] < tOn + 0.08 + Wg) frames.push(i);
+          const tc = (tOff + tOn) / 2;
+          let best = Infinity, bt = [tOff, tOn];
+          for (let a = tOff - 0.06; a <= tOff + 0.06; a += 0.002) {
+            for (let b = tOn - 0.06; b <= tOn + 0.06; b += 0.002) {
+              // Basis for P(t) = c0 + c1·x + c2·x², x = t − tc; tangent at τ: P(τ) + P'(τ)(t − τ).
+              // Columns: c0, c1, c2 of P; with `curved`, own curvatures of the ground before and after (C1 joints).
+              const m = curved ? 5 : 3;
+              const A = Array.from({ length: m }, () => new Array(m).fill(0)), bv = new Array(m).fill(0);
+              const rows: [number[], number][] = [];
+              for (const i of frames) {
+                const t = s.t[i];
+                if (t < a - Wg || t > b + Wg) continue;
+                const tau = t < a ? a : t > b ? b : t, xt = tau - tc, d = t - tau;
+                // P(τ) + P'(τ)(t−τ) [+ k(t−τ)²] = c0 + c1·(xt + d) + c2·(xt² + 2·xt·d) [+ k·d²]; in the air d = 0.
+                const r = [1, xt + d, xt * xt + 2 * xt * d];
+                if (curved) r.push(t < a ? d * d : 0, t > b ? d * d : 0);
+                rows.push([r, extra.com[i]]);
+                for (let p = 0; p < m; p++) { bv[p] += r[p] * extra.com[i]; for (let q = 0; q < m; q++) A[p][q] += r[p] * r[q]; }
+              }
+              if (rows.length < m + 5) continue;
+              const sol = solveN(A, bv);
+              if (!sol || sol[2] >= 0) continue;
+              let sse = 0;
+              for (const [r, y] of rows) sse += (y - r.reduce((acc, v, k) => acc + v * sol[k], 0)) ** 2;
+              if (sse < best) { best = sse; bt = [a, b]; }
+            }
+          }
+          const which = opts.comEdges ?? "both";
+          if (which !== "landing") tOff = bt[0];
+          if (which !== "takeoff") tOn = bt[1];
+        } else {
         const which = opts.comEdges ?? "both";
         if (which !== "landing") { const t = edge(tOff, 1); if (Number.isFinite(t)) tOff = t; }
         if (which !== "takeoff") { const t = edge(tOn, -1); if (Number.isFinite(t)) tOn = t; }
+        }
       }
     }
     if (opts.edges === "hipLeg") {
@@ -487,6 +528,23 @@ function windowQuantile(t: number[], y: number[], from: number, to: number, p: n
   w.sort((a, b) => a - b);
   return p === 0.5 ? median(w) : w[Math.floor(p * (w.length - 1))];
 }
+/** Gaussian elimination with partial pivoting; null if singular. */
+function solveN(m: number[][], v: number[]): number[] | null {
+  const n = v.length, a = m.map((r, i) => [...r, v[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(a[r][c]) > Math.abs(a[p][c])) p = r;
+    if (Math.abs(a[p][c]) < 1e-12) return null;
+    [a[c], a[p]] = [a[p], a[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = a[r][c] / a[c][c];
+      for (let k = c; k <= n; k++) a[r][k] -= f * a[c][k];
+    }
+  }
+  return a.map((r, i) => r[n] / r[i]);
+}
+
 function solve3(m: number[][], v: number[]): number[] | null {
   const A = m.map((row, i) => [...row, v[i]]);
   for (let col = 0; col < 3; col++) {
