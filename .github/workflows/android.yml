@@ -2,6 +2,10 @@
 #   push to main → artifact "boing-main-apk"
 #   push to dev  → artifact "boing-dev-apk"
 # Download it from the run's page (Actions → run → Artifacts; needs a GitHub login).
+# Builds of main and dev are also published as a plain .apk on a rolling GitHub release
+# (no login needed), replaced on every build:
+#   main → https://github.com/ljungqvist/boing/releases/latest/download/boing.apk
+#   dev  → https://github.com/ljungqvist/boing/releases/download/dev-latest/boing-dev.apk
 # The APK is the Expo template's release build, signed with the debug key: it installs
 # on a phone but isn't a store/production build. "Run workflow" builds the selected branch.
 name: Build Android APK
@@ -16,7 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # publish the rolling release
 
 concurrency:
   group: android-${{ github.ref }}
@@ -58,3 +62,21 @@ jobs:
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish rolling release
+        if: github.ref_name == 'main' || github.ref_name == 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$BRANCH" = main ]; then
+            tag=main-latest; apk=boing.apk; flags=--latest
+          else
+            tag=dev-latest; apk=boing-dev.apk; flags="--prerelease --latest=false"
+          fi
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$apk"
+          # Recreate the release so its tag points at this commit; the download URL stays the same.
+          gh release delete "$tag" --yes --cleanup-tag || true
+          gh release create "$tag" "$apk" $flags --target "$GITHUB_SHA" \
+            --title "Boing $BRANCH build" \
+            --notes "Latest Android build of \`$BRANCH\` ($GITHUB_SHA), replaced on every build. Signed with the debug key: installs on a phone, not a store build."
