@@ -148,6 +148,51 @@ export function rtmSets(finder: Finder): Result[][] {
   return Object.keys(groups).sort().map((k) => groups[k]);
 }
 
+export const SOURCES = ["mp-heavy-full", "rtm-halpe", "rtmw", "vitpose-ankle", "rtmw-m", "rtmw-l"];
+
+/**
+ * The same jumps through other pose models (tools/library/pose_sources.py, vitpose_source.py): the
+ * 2026-10-21 front clips at 60 fps, and the 2026-10-19 side clips at 60 fps (per-image models at
+ * 240 fps are thinned to every 4th frame at all 4 phases; MediaPipe and ViTPose files are 60 fps).
+ */
+export function sourceSets(finder: Finder, sources = SOURCES): Result[][] {
+  const lib = loadLibrary();
+  if (!lib) return [];
+  const groups: Record<string, Result[]> = {};
+  const push = (name: string, id: string, video: PoseVideo, t: { off: number; on: number; h: number }) => {
+    const best = finder(video).filter((x) => Math.abs(x.tOff - t.off) < 0.5).sort((a, c) => Math.abs(a.tOff - t.off) - Math.abs(c.tOff - t.off))[0];
+    (groups[name] ??= []).push(best
+      ? { set: name, id, truth: t.h, found: true, h: best.hPrimary, rejected: best.rejected, dOff: best.tOff - t.off, dOn: best.tOn - t.on, flags: best.flags }
+      : { set: name, id, truth: t.h, found: false, h: NaN, rejected: true, dOff: NaN, dOn: NaN, flags: [] });
+  };
+  for (const src of sources) {
+    for (const j of lib.jumps) {
+      if (!j.truth) continue;
+      const front = `${LIBRARY}/pose/2026-10-21/${j.id}_front_${src}.json`;
+      if (j.date === "2026-10-21" && existsSync(front)) {
+        const d = JSON.parse(readFileSync(front, "utf8"));
+        push(`front 60 fps (2026-10-21), ${src}`, j.id, { width: d.width, height: d.height, fps: 60, frames: d.frames }, truthOnPoseClock(j)!);
+      }
+      const front30 = `${LIBRARY}/pose/2026-10-19/${j.id}_front_${src}.json`;
+      if (j.date === "2026-10-19" && existsSync(front30)) {
+        const d = JSON.parse(readFileSync(front30, "utf8"));
+        push(`front 30 fps (2026-10-19), ${src}`, j.id, { width: d.width, height: d.height, fps: 30, frames: d.frames }, truthOnPoseClock(j)!);
+      }
+      const side = `${LIBRARY}/pose/2026-10-19/side/${j.id}/${src}.json`;
+      if (j.date === "2026-10-19" && existsSync(side)) {
+        const d = JSON.parse(readFileSync(side, "utf8"));
+        const t = { off: j.truth.takeoffT, on: j.truth.landingT, h: j.truth.heightCm / 100 };
+        const phases = d.fps >= 240 ? 4 : 1;
+        for (let p = 0; p < phases; p++) {
+          const frames = d.fps >= 240 ? d.frames.filter((f: { k: number }) => f.k % 4 === p) : d.frames;
+          push(`side 60 fps (2026-10-19), ${src}`, `${j.id}/p${p}`, { width: d.width, height: d.height, fps: 60, frames }, t);
+        }
+      }
+    }
+  }
+  return Object.keys(groups).map((k) => groups[k]);
+}
+
 export function summary(rs: Result[]): string {
   const e = rs.filter((r) => r.found && !r.rejected).map((r) => (r.h - r.truth) * 100);
   if (!e.length) return `  0/${rs.length}`;
