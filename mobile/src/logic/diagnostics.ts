@@ -25,11 +25,20 @@ function describeMotion(m: unknown): string | null {
   return `phone ${num(e, "tiltDeg", 0)}° back${e.upsideDown ? " (upside down)" : ""}, turn ≤ ${num(e, "turnMaxDegS", 0)}°/s, shake ${num(e, "shakeMaxG", 2)} g`;
 }
 
+/** Exposure time, ISO and frame rates of the camera (motion blur of the feet). */
+function describeCamera(c: unknown): string | null {
+  if (!c || typeof c !== "object") return null;
+  const e = c as Entry;
+  const parts: string[] = [];
+  if (typeof e.exposureS === "number" && e.exposureS > 0) parts.push(`exposure 1/${Math.round(1 / e.exposureS)} s`);
+  if (typeof e.iso === "number" && e.iso > 0) parts.push(`ISO ${Math.round(e.iso)}`);
+  if (typeof e.fps === "number") parts.push(`camera ${num(e, "fps", 0)} fps (max ${num(e, "maxFps", 0)})`);
+  return parts.length ? parts.join(", ") : null;
+}
+
 /** One line per live jump: how it was measured, and why re-measuring failed. */
 export function describeLog(e: Entry): string {
-  const line = describeJump(e);
-  const motion = describeMotion(e.motion);
-  return motion ? `${line} · ${motion}` : line;
+  return [describeJump(e), describeMotion(e.motion), describeCamera(e.camera)].filter(Boolean).join(" · ");
 }
 
 function describeJump(e: Entry): string {

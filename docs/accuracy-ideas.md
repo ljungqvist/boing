@@ -20,6 +20,9 @@ foot, so the toe-point "flight" starts before the toes leave the floor and ends 
 
 Status: **shipped** · **tested, no gain** · **to test** · **idea**.
 
+View policy (user, 2026-10-21): support both front and side view; if one turns out clearly better,
+encourage it with a setup hint. So far the difference is small (idea 5), so both stay.
+
 ## Done
 
 | idea | status | result | where |
@@ -36,14 +39,22 @@ Status: **shipped** · **tested, no gain** · **to test** · **idea**.
 
 ## To test, ranked
 
-### 1. A pose model that finds the toe tip — to test
+### 1. A pose model that finds the toe tip — tested, no gain (2026-10-21)
 
-Whole-body models (e.g. RTMPose with COCO-WholeBody points) mark the big toe, little toe and heel
-separately. With the real toe tip, takeoff/landing timing should move close to the truth, which is
-where most of the offset comes from.
-Check: run the candidate model on the 240 fps clips and the native clips with truth; compare edge
-errors and heights with MediaPipe. Then: can it run on the phone, and fast enough to re-measure?
-Decide: adopt if it removes most of the offset without new outliers.
+RTMPose-x "body with feet" (Halpe26: big toe, small toe, heel; rtmlib + onnxruntime in its own venv,
+`tools/library/rtm_pose.py`), written in MediaPipe's layout with the big toe as the foot point, so
+`findJumps` runs unchanged. Run on the app's front frames and on every 240 fps frame of the side
+windows (per image, so thinning to 30/60 fps afterwards is exact). Sharp frames only.
+
+| | MediaPipe heavy (today) | RTMPose-x, big toe |
+|---|---|---|
+| front, app 30 fps (10 jumps) | +1.9 ± 2.1, worst +5.4 (9/10) | +4.0 ± 2.5, worst +7.2 (7/10) |
+| side 30 fps (96) | +3.0 ± 1.9, worst +7.9 | +4.5 ± 1.6, worst +8.1 |
+| side 60 fps (48) | +1.9 ± 2.3, worst +6.5 | +4.3 ± 1.2, worst +7.1 |
+
+Worse everywhere: no temporal smoothing (per image), the toe points jitter on small feet (front 720p:
+"unsteady points" rejections), and the big-toe tip doesn't remove the edge offset. Also no on-device
+version. Not pursued.
 
 ### 2. Takeoff/landing from the pixels around the feet — tested, promising, not proven (2026-10-21)
 
@@ -137,16 +148,22 @@ at high frame rates (sim 240 fps +4.0 → +2.2, full-rate pose +3.0 → +1.6, 12
 60 fps +1.9 → +1.6, worst 6.5 → 4.3) but worse on the native 60 fps set (worst +3.5 → +6.4) and drops
 a jump at 30 fps. Candidate for ≥ 120 fps recordings, not for today's 30/60 fps.
 
-### 6. Higher capture rates where available — idea
+### 6. Higher capture rates where available — prepared (2026-10-21)
 
-Some phones record 120/240 fps. Using that for the re-measurement recording would cut timing error a
-lot. Check what the app's camera library offers per device and the re-measurement time per jump.
+The app already asks for the highest rate the camera's normal sessions offer, up to 240 fps
+(`bestFps`): 30 fps on the Galaxy S22 front camera, 60 on the user's phone. 120/240 fps needs Android's
+constrained high-speed sessions, which VisionCamera's normal sessions don't use. The library results
+say what it would bring: at 240 fps the centre-of-mass hinge and clamped edges remove most of the
+offset (ideas 4 and 5), but only with full-resolution decoding. Done tonight: the diagnostics now log
+the session's and the camera's maximum frame rate with every re-measured jump.
 
-### 7. Shorter exposure — idea
+### 7. Shorter exposure — prepared (2026-10-21)
 
-Blur widens the spread and the worst cases (simulation: ± 1.1 sharp → ± 1.8 cm at 1/30 s). Cap the
-exposure time if the camera allows it; log the exposure in the diagnostics; otherwise a "bright light"
-setup hint.
+VisionCamera 5 can lock exposure time/ISO only on iOS. Done tonight: every re-measured jump logs the
+camera's exposure time, ISO and exposure mode where the phone reports them (`camera` in the log,
+shown as "exposure 1/120 s, ISO 640, camera 30 fps (max 60)"; on Android exposure may read 0). Not
+verified on a phone. The next session tells how much blur there is; until then a "bright light" setup
+hint is the lever.
 
 ### 8. Correct the flight time for the landing posture — tested, no gain (2026-10-21)
 
@@ -166,11 +183,14 @@ min(rise, mean), 0.7 rise + 0.3 flight capped, rise alone: none beats `min(hRise
 Both estimates share the same toe-edge bias, so averaging them can't remove it. A bias correction
 would, but the offset differs by session (+0.9 to +4 cm), so it can't be calibrated from our data.
 
-### 10. More truth data — to do
+### 10. More truth data — to do (most important next step)
 
-The side-view setup (240 fps phone at floor level, red socks) gives cheap, precise truth. Sessions in
-other shoes, floors, light, phones and with other people would show which ideas really work and keep us
-from tuning to one setup. Planned: a local jump library (below).
+The side-view setup (240 fps phone at floor level, side-on, socks or shoes that stand out from the
+floor) gives cheap, precise truth. The jump library (`docs/jump-library.md`) now holds 42 jumps (37 with
+a truth, 1 person). The open questions that only more data can settle: the pixel edges' threshold
+across setups (idea 2), side vs front with other people and shoes (idea 5), and the per-session offset.
+Reference clips with device values agree with the usual offset: WhatsApp clip (My Jump 22.25 cm):
+flight time 23.6, shown 20.9; force-plate clip (46.1 cm, uncertain): 43.7.
 
 ## Jump library (planned, local only)
 
