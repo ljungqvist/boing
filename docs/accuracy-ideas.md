@@ -107,6 +107,17 @@ Today's method (no centre of mass) on each model's pose:
   points are real toes), but worse than MediaPipe at 30 fps on 720p (per image, no tracking; small feet),
   and the smaller RTMW-l/m (the ones a phone could run) lose most of the gain. Not for the app now.
 
+### Constant offset correction — decided: not yet, wait for more data (2026-10-21)
+
+The shown height is takeoff→apex; the flight time only caps it. The landing correction above worked
+only through that cap (it made the corrected flight time the shown height), so it doesn't fit the design.
+The matching lever is the takeoff (the toe point leaves the floor 10–45 ms early). Takeoff 10 ms later
+(`tools/library/takeoff_shift_eval.ts`): front 30 fps +1.7 → +0.1 ± 2.0, front 60 fps (2026-10-21)
++2.2 → +0.1 ± 1.3, (2026-10-15) +0.9 → −1.0 ± 1.8, full rate +3.0 → +1.2, side 60 fps +2.0 → +0.2. It
+removes the mean offset only (the spread stays), and the right value differs by session (≈ 2 cm).
+**User's decision: no "magic" correction yet.** Re-check with jumps from other people and in shoes;
+ship a correction only if one value fits them all.
+
 ## To test, ranked
 
 ### 1. A pose model that finds the toe tip — tested, no gain (2026-10-21)
