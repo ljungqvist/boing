@@ -46,7 +46,7 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 
 `derived[]` lists the native simulations (`review/sim_*`) of videos that no longer exist.
 
-## Contents (2026-10-21)
+## Contents (2026-10-21, 50 jumps)
 
 | | jumps | truth | data |
 |---|---|---|---|
@@ -54,6 +54,7 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 | 2026-10-14 240 fps (deleted) | 7 | hand-marked at 240 fps | full-rate pose; simulations |
 | 2026-10-13 120 / 60 fps (deleted) | 4 | hand-marked | full-rate pose; simulation (120 fps) |
 | 2026-10-15 native table / floor (deleted) | 14 (13 with truth) | hand-marked at 60 fps | the app's re-measured pose |
+| 2026-10-21 native front 60 fps (Galaxy S24+) | 8 | hand-marked at 60 fps from the app's clips | app clips (cut), logged poses |
 | reference videos (WhatsApp, contact mat, force plate) | 5 | device values | whole video + pose |
 
 ## Use

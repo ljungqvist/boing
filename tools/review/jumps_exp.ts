@@ -6,7 +6,7 @@
 import { evalQuadratic, fitQuadratic, quadraticRoots, type Quadratic } from "../../src/analysis/fit";
 import { toSignals } from "../../src/analysis/signals";
 import type { Landmark, PoseVideo, Signals } from "../../src/analysis/types";
-import type { Jump, JumpFlag } from "../../src/analysis/jumps";
+import { hipEdges, PLATEAU_RATIO, POOR_FIT, type Jump, type JumpFlag } from "../../src/analysis/jumps";
 import { comY, trunkY } from "./com";
 
 export interface ExpOptions {
@@ -158,6 +158,15 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
     let tOff = quadraticRoots(toeFit, levelOff)?.[0] ?? t0;
     let tOn = quadraticRoots(toeFit, levelOn)?.[1] ?? t1;
 
+    // As findJumps: a toe plateau (feet pulled up) takes its edges along the hips.
+    let plateau = false;
+    if (!opts.edges && toeFit.rms / bodyPx > POOR_FIT && hipFit.rms / bodyPx <= POOR_FIT && hipFit.a < 0) {
+      const e = hipEdges(s, fl.frames, hipFit, levelOff, levelOn, bodyPx);
+      if (e) {
+        const rise = (g / 2) * (hipFit.vertex - e.tOff) ** 2, flight = (g * (e.tOn - e.tOff) ** 2) / 8;
+        if (Math.max(rise, flight) <= PLATEAU_RATIO * Math.min(rise, flight)) { tOff = e.tOff; tOn = e.tOn; plateau = true; }
+      }
+    }
     // Contact frames around the flight (by time order in the full signal).
     const first = fl.frames[0], last = fl.frames[fl.frames.length - 1];
     let prev = first - 1; while (prev >= 0 && !Number.isFinite(s.toe[prev])) prev--;
@@ -351,7 +360,8 @@ export function findJumpsExp(video: PoseVideo, opts: ExpOptions = {}, g = 9.81, 
     if (j.airborneFrames < 8) j.flags.push("few-frames");
     if (hipFit.a >= 0) j.flags.push("not-parabola");
     else if (gImplied < 4 || gImplied > 20) j.flags.push("g-implausible");
-    if (Math.max(j.hipRmsRel, j.toeRmsRel) > 0.015) j.flags.push("poor-fit");
+    if (plateau) j.flags.push("toe-plateau");
+    else if (Math.max(j.hipRmsRel, j.toeRmsRel) > 0.015) j.flags.push("poor-fit");
     if (Math.abs(hPfit - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
     if (j.floorShiftRel > 0.02) j.flags.push("camera-moved");
     if (j.lostRel > MAX_LOST || j.outsideRel > MAX_OUTSIDE) j.flags.push("out-of-view");

@@ -18,11 +18,12 @@ describe.skipIf(!lib)("jump library", () => {
   });
 
   it("keeps today's accuracy on the native sessions (front view)", () => {
-    // Bounds a little outside the 2026-10-20 numbers (30 fps: 9/10, +2.0 ± 2.1, worst +5.4;
-    // 60 fps: 9/13, +0.9 ± 1.5, worst +3.5); a change that crosses them needs a look.
+    // Bounds a little outside the 2026-10-21 numbers (30 fps: 10/10, +1.7 ± 2.1, worst +5.4;
+    // 60 fps: 11/13, +0.9 ± 1.8, worst +3.6 and 7/8, +2.2 ± 1.3, worst +3.4); crossing them needs a look.
     const bounds: Record<string, { accepted: number; mean: number; worst: number }> = {
       "front, native 30 fps (2026-10-19)": { accepted: 9, mean: 2.5, worst: 6 },
-      "front, native 60 fps (2026-10-15)": { accepted: 9, mean: 1.5, worst: 4.5 },
+      "front, native 60 fps (2026-10-15)": { accepted: 11, mean: 1.5, worst: 4.5 },
+      "front, native 60 fps (2026-10-21)": { accepted: 7, mean: 3, worst: 4.5 },
     };
     for (const s of librarySets().filter((x) => bounds[x.name])) {
       const ok = runSet(s, todayFinder).filter((r) => r.found && !r.rejected);

@@ -164,6 +164,51 @@ class Builder:
                 entry["app"] = app
             self.jumps.append(entry)
 
+    # 2026-10-21: native app, front camera at 60 fps (Galaxy S24+), hand-marked from the app's own clips.
+    def session_20261021(self):
+        print("2026-10-21 front 60 fps session", flush=True)
+        from cut import frame_pts
+        rev = os.path.join(self.data, "review/front_20261021")
+        marks = json.load(open(os.path.join(rev, "marks.json")))
+        up = os.path.join(self.data, marks["upload"])
+        sess = json.load(open(os.path.join(up, "session.json")))
+        logs = sorted((l for l in sess["logs"] if l.get("clip") in marks["marks"]), key=lambda l: l["tOff"])
+        for n, log in enumerate(logs, 1):
+            jid = f"2026-10-21-f{n}"
+            src = os.path.join(up, log["clip"])
+            pts, _ = frame_pts(src)
+            air, contact = marks["marks"][log["clip"]]
+            info = self.cut(src, max(0, air - 180), len(pts) - 1, os.path.join(self.lib, f"clips/2026-10-21/{jid}_front60.mp4"))
+            off_t = (pts[air - 1] + pts[air]) / 2  # clip seconds
+            on_t = (pts[contact - 1] + pts[contact]) / 2
+            flight_ms = (on_t - off_t) * 1000
+            pose_file = os.path.join(self.lib, f"pose/2026-10-21/{jid}_front_heavy.json")
+            p = log["pose"]
+            write_json(pose_file, {"width": p["width"], "height": p["height"], "fps": log.get("fps", 60),
+                                   "frames": expand_compact(p), "model": "heavy", "source": "app re-measurement (logged)"})
+            rejected = bool(log.get("error"))
+            self.jumps.append({
+                "id": jid, "person": "p1", "date": "2026-10-21", "session": "2026-10-21 native front 60 fps",
+                "setup": {"view": "front", "camera": "phone on the floor, front camera", "floor": "wood",
+                          "footwear": "socks (green)", "arms": "hands on hips", "light": "morning, indoor"},
+                "devices": {"app": "Samsung Galaxy S24+ (SM-S926B), front camera, 60 fps, 1080×1920"},
+                "clips": [{"role": "app-front", "file": self.rel(os.path.join(self.lib, f"clips/2026-10-21/{jid}_front60.mp4")),
+                           "frameOffset": info["frameOffset"], "frames": info["frames"], "source": info["source"],
+                           "clipStart": log["clipStart"] + pts[info["frameOffset"]],
+                           "time": "app frame clock = clip seconds + clipStart"}],
+                "pose": [{"role": "front-heavy-app", "file": self.rel(pose_file), "clock": "app frame clock"}],
+                "truth": {"method": "hand-marked from 60 fps foot crops of the app's clip (front view): last frame on the floor / first in the air, last in the air / first on the floor, edges halfway",
+                          "precision": "±1 frame (≈17 ms) per edge",
+                          "takeoffT": round(off_t + log["clipStart"], 5), "landingT": round(on_t + log["clipStart"], 5),
+                          "clockNote": "app frame clock (original clip pts + clipStart)",
+                          "takeoffFrame": air - info["frameOffset"], "landingFrame": contact - info["frameOffset"],
+                          "flightMs": round(flight_ms, 1), "heightCm": h_flight(flight_ms)},
+                "app": {**{k: log.get(k) for k in ("tOff", "hLive", "framesLive", "flagsLive", "fpsLive", "h", "hRise", "hFlight",
+                                                   "frames", "g", "offset", "flags", "error", "clipStart", "window", "video", "camera", "ms")},
+                        "shownCm": None if rejected else round(log["h"] * 100, 1)},
+                "tags": ["rejected-poor-fit"] if rejected else ["clean"],
+            })
+
     # Pose-only sessions whose videos were deleted: landmarks of the whole video + hand-marked truth.
     def pose_only_video(self, vid_id, date, setup, device, precision, tags=None):
         man = {e["id"]: e for e in json.load(open(os.path.join(REPO, "testdata/videos.json")))}[vid_id]
@@ -272,6 +317,7 @@ class Builder:
 
     def run(self):
         self.session_20261019()
+        self.session_20261021()
         tags_020914 = {5: ["drift-towards-camera"]}
         self.pose_only_video("own-20261014_020914", "2026-10-14",
                              {"view": "front", "camera": "phone on the floor, tilted up", "floor": "tiles", "footwear": "socks", "arms": "hands on hips"},
