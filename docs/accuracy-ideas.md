@@ -11,7 +11,8 @@ measured in the field, not in a lab. Ideas that need a different setup are judge
 | | frame rate | error | worst |
 |---|---|---|---|
 | native, 2026-10-15 table + floor (hand-marked) | 60 fps | +0.9 ± 1.5 cm | +3.5 |
-| native, 2026-10-19 (240 fps side-view truth) | 30 fps | +2.0 ± 2.1 cm | +5.4 |
+| native, 2026-10-19 (240 fps side-view truth) | 30 fps | +1.7 ± 2.1 cm (10/10) | +5.4 |
+| native, 2026-10-21 (Galaxy S24+, hand-marked at 60 fps) | 60 fps | +2.2 ± 1.3 cm (7/8) | +3.4 |
 | simulation of the 2026-10-14 video, sharp / blur 1/30 s | 30 fps | +3.8 ± 1.1 / +4.9 ± 1.8 cm | +5.5 / +7.2 |
 
 Most of the steady offset is the foot: MediaPipe's "foot index" point sits around the ball of the
@@ -36,6 +37,42 @@ encourage it with a setup hint. So far the difference is small (idea 5), so both
 | Centre of mass for the apex only (de Leva segments) | tested, no gain | smoother parabola at 240 fps, heights not better: the error is at the edges | review R7, `tools/review/com.ts` |
 | Leg-length peak as takeoff | tested, no gain | good on the 240 fps video, 5–25 cm low on side views and in shoes | accuracy review F4 |
 | Switch the shown height to the flight time | tested, no gain | tighter but adds the landing posture (bent knees +5–6 cm) | accuracy review |
+
+### 2026-10-21: the 60 fps front session and the toe plateau (shipped)
+
+8 jumps with the app at 60 fps (Galaxy S24+ front camera, 1080×1920), no side reference; takeoff and
+landing hand-marked from the app's own clips (`tools/library/front_sheets.py`, ±1 frame = 17 ms;
+library entries `2026-10-21-f1…f8`). The app: 6 accepted, +2.6 ± 0.9 cm, worst +3.4; landing read a
+steady 25–39 ms late (the toe-point offset). Android reported exposure 0 (only frame rates come through).
+
+The 2 rejected jumps ("unsteady body points") had the **feet pulled up hard** in the air: the toe track
+plateaus (toe residual 2.9–3.1 % of body height vs 0.5–0.9 % normally) while the hips stay clean
+(0.5–0.6 %). The toe parabola then put the takeoff late and the apex early (takeoff→apex 13.5–15.6 cm
+for 21–25 cm jumps). Same pattern as the two plateau jumps of 2026-10-19. Tried on these four:
+
+| | 2026-10-21 f5 / f6 (21.3 / 24.8) | 2026-10-19 a2 / b6 (23.5 / 21.7) |
+|---|---|---|
+| today | 15.6 ✗ / 13.5 ✗ | 29.2 ✗ / 27.2 |
+| centre of mass as apex | 20.1 ✗ / 17.3 ✗ | |
+| centre-of-mass hinge | 7.4 ✗ / 7.5 ✗ | |
+| edges along the hips (`hipLeg`) | 21.0 / 19.8 | 23.1 / 26.8 |
+
+**Shipped:** when only the toes fit poorly (toe residual > 1.5 %, hips ≤ 1.5 %), `findJumps` takes the
+edges along the hips (first/last frames with the toes clearly in the air, moved back to the floor along
+the hip parabola) and accepts the jump if its two heights agree within 1.3×; flag `toe-plateau` (a note).
+Every front set gains or holds (`tools/library/hip_rule_eval.ts`):
+
+| | before | after |
+|---|---|---|
+| native 30 fps (2026-10-19) | 9/10 +1.9 ± 2.1, worst +5.4 | **10/10** +1.7 ± 2.1, worst +5.4 |
+| native 60 fps (2026-10-21) | 6/8 +2.6 ± 0.9, worst +3.4 | **7/8** +2.2 ± 1.3, worst +3.4 |
+| native 60 fps (2026-10-15) | 9/13 +0.9 ± 1.5, worst +3.5 | **11/13** +0.9 ± 1.8, worst +3.6 |
+| simulations (front) | | unchanged |
+| side, sim 30 fps sharp / 60 fps blur 1/60 | 85/96 +3.0, worst +7.9 / 39/48 +2.5, worst +6.6 | 96/96 +3.2, worst +8.7 / 46/48 +2.6, worst +7.8 |
+
+Side view: more jumps measured, those read a little high (+0.2 cm mean, worst +1 cm). Accepted for the
+front-first app. The centre of mass helps the tucked jumps only partly (logged poses lack arms; the hips
+already fly a parabola), so it isn't the fix here.
 
 ## To test, ranked
 

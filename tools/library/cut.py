@@ -31,12 +31,6 @@ def capture_fps(src):
     return float(v) if v else None
 
 
-def _read(cap, k):
-    cap.set(cv2.CAP_PROP_POS_FRAMES, k)
-    ok, bgr = cap.read()
-    return bgr if ok else None
-
-
 def cut(src, first, last, out):
     pts, key = frame_pts(src)
     kf = max(i for i in range(first + 1) if key[i])
@@ -51,24 +45,30 @@ def cut(src, first, last, out):
         cmd += ["-tag:v", "hvc1"]
     subprocess.run(cmd + [out], check=True)
 
-    # Which original frame is the clip's frame 0? Compare decoded frames (lossless copy: identical pixels).
+    # Which original frame is the clip's frame 0, and are all frames identical? Decode both files
+    # sequentially (seeking by frame number is inexact in variable-frame-rate files).
     a, b = cv2.VideoCapture(src), cv2.VideoCapture(out)
-    f0 = _read(b, 0)
-    offset = None
-    for k in range(max(0, kf - 3), kf + 4):
-        g = _read(a, k)
-        if g is not None and np.array_equal(g, f0):
+    ok, f0 = b.read()
+    offset, k = None, 0
+    while k <= kf + 3:
+        ok, g = a.read()
+        if not ok:
+            break
+        if k >= kf - 3 and np.array_equal(g, f0):
             offset = k
             break
+        k += 1
     if offset is None:
         raise RuntimeError(f"{out}: first frame matches no original frame near {kf}")
-    m = int(b.get(cv2.CAP_PROP_FRAME_COUNT))
-    # Spot checks across the clip, incl. the requested range's ends.
-    for i in sorted({0, first - offset, (m - 1) // 2, last - offset, m - 1}):
-        if not 0 <= i < m:
-            continue
-        if not np.array_equal(_read(a, offset + i), _read(b, i)):
-            raise RuntimeError(f"{out}: frame {i} differs from original {offset + i}")
+    m = 1
+    while True:
+        ok_b, fb = b.read()
+        if not ok_b:
+            break
+        ok_a, fa = a.read()
+        if not ok_a or not np.array_equal(fa, fb):
+            raise RuntimeError(f"{out}: frame {m} differs from original {offset + m}")
+        m += 1
     if offset + m - 1 < last:
         raise RuntimeError(f"{out}: ends at original frame {offset + m - 1}, wanted {last}")
     return {"frameOffset": offset, "frames": m, "captureFps": cfps}
