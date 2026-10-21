@@ -106,7 +106,55 @@ describe("findJumps on synthetic CMJs", () => {
     const lag = 9;
     s.hip = s.hip.map((_, i) => s.hip[Math.max(0, i - lag)]);
     const [j] = findJumps(s);
-    expect(j.hPrimary / j.hFlight).toBeGreaterThan(2);
+    expect(j.hRise / j.hFlight).toBeGreaterThan(2);
     expect(j.flags).toContain("inconsistent");
+  });
+
+  it("flags a highest point too late for the landing (moving towards the camera in the air)", () => {
+    // A floor-level camera sees the hips rise when the person comes closer: model it as an extra
+    // upward drift of the hips after takeoff. 0.4 m/s puts the apex ≈ 40 ms late.
+    const drift = (v: number) => {
+      const s = syntheticSignals({ fps: 30, noise: 0.003 });
+      s.hip = s.hip.map((y, i) => y + Math.max(0, s.t[i] - 2) * v * 300);
+      return findJumps(s)[0];
+    };
+    const moved = drift(0.4);
+    expect(moved.hRise / moved.hFlight).toBeGreaterThan(1.2);
+    expect(moved.flags).toContain("inconsistent");
+    // A little drift stays within the noise allowance.
+    expect(drift(0.1).flags).not.toContain("inconsistent");
+  });
+
+  it("takes the edges along the hips when the feet are pulled up in the air (toe plateau)", () => {
+    // A 30 cm jump; the feet tuck 25 cm in the air (ramps of 60 ms after takeoff and before landing):
+    // the toes no longer fly a parabola, the hips still do.
+    const s = syntheticSignals({ fps: 60, noise: 0.002 });
+    const T = 2 * Math.sqrt((2 * 0.3) / 9.81);
+    s.toe = s.toe.map((y, i) => {
+      const x = s.t[i] - 2;
+      if (x <= 0 || x >= T) return y;
+      return y + 0.25 * 300 * Math.min(1, x / 0.06, (T - x) / 0.06);
+    });
+    const [j] = findJumps(s);
+    expect(j.toeRmsRel).toBeGreaterThan(0.015);
+    expect(j.flags).toContain("toe-plateau");
+    expect(j.flags).not.toContain("poor-fit");
+    expect(Math.abs(j.hFlight - 0.3)).toBeLessThan(0.03);
+    expect(Math.abs(j.hPrimary - 0.3)).toBeLessThan(0.03);
+  });
+
+  it("shows at most the flight-time height (a late apex can't make the jump higher)", () => {
+    const drift = (v: number) => {
+      const s = syntheticSignals({ fps: 30, noise: 0.003 });
+      s.hip = s.hip.map((y, i) => y + Math.max(0, s.t[i] - 2) * v * 300);
+      return findJumps(s)[0];
+    };
+    const j = drift(0.2);
+    expect(j.hRise).toBeGreaterThan(1.05 * j.hFlight);
+    expect(j.flags).not.toContain("inconsistent");
+    expect(j.hPrimary).toBe(j.hFlight);
+    // Without drift the takeoff→apex height is shown as it is.
+    const still = drift(0);
+    expect(still.hPrimary).toBe(Math.min(still.hRise, still.hFlight));
   });
 });

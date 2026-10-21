@@ -1,4 +1,4 @@
-import { fitQuadratic, quadraticRoots, type Quadratic } from "./fit";
+import { evalQuadratic, fitQuadratic, quadraticRoots, type Quadratic } from "./fit";
 import type { Signals } from "./types";
 
 export interface JumpOptions {
@@ -15,14 +15,22 @@ export type JumpFlag =
   | "disagree"        // takeoff→apex and flight-time heights differ: bent-knee landing?
   | "camera-moved"    // floor line differs before and after the jump
   | "out-of-view"     // hips or feet left the picture, or the person was lost in the flight: too close?
-  | "inconsistent";   // takeoff→apex and flight-time heights too far apart to be one flight
+  | "inconsistent"     // takeoff→apex and flight-time heights can't be one flight (or the apex comes too late)
+  | "toe-plateau";     // note: feet pulled up in the air; edges taken along the hips instead of the toe curve
 
 export interface Jump {
   tOff: number;
   tOn: number;
   tApex: number;
-  /** Height from takeoff to apex, g/2·(tApex − tOff)², metres. */
+  /**
+   * The height shown, metres: takeoff to apex, g/2·(tApex − tOff)², but at most the flight-time
+   * height. A jump can't land higher than it took off, so a rise above the flight-time height is a
+   * late apex (moving towards the camera in the air, unsteady hip points); the flight time is then
+   * the better of the two (docs/evaluation/2026-10-20-side-view-reference.md).
+   */
   hPrimary: number;
+  /** Takeoff to apex, g/2·(tApex − tOff)², metres, not capped. */
+  hRise: number;
   /** Height from flight time, g·(tOn − tOff)²/8, metres. */
   hFlight: number;
   airborneFrames: number;
@@ -46,6 +54,13 @@ const MAX_OUTSIDE = 0.03;
 const MAX_LOST = 0.2;
 /** Takeoff→apex and flight-time heights further apart than this factor aren't one flight. */
 const MAX_HEIGHT_RATIO = 2;
+/**
+ * Takeoff→apex may exceed the flight-time height only by measurement noise: more would mean landing
+ * higher than the takeoff, which a jump can't do (the body is never more stretched than at takeoff).
+ * Moving towards a floor-level camera in the air shifts the hips' apex late and reads 28–71 cm for a
+ * 16 cm jump; normal jumps stay below ≈ 1.15 at 30 fps (docs/evaluation/2026-10-15-accuracy-review.md).
+ */
+const MAX_RISE_OVER_FLIGHT = 1.2;
 
 export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
   const g = opts.g ?? 9.81;
@@ -93,17 +108,34 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     const tt = fl.frames.map((i) => s.t[i]);
     const toeFit = fitQuadratic(tt, fl.frames.map((i) => s.toe[i]));
     const hipFit = fitQuadratic(tt, fl.frames.map((i) => s.hip[i]));
-    const tOff = quadraticRoots(toeFit, level(fl.before))?.[0] ?? t0;
-    const tOn = quadraticRoots(toeFit, level(fl.after))?.[1] ?? t1;
+    let tOff = quadraticRoots(toeFit, level(fl.before))?.[0] ?? t0;
+    let tOn = quadraticRoots(toeFit, level(fl.after))?.[1] ?? t1;
     const tApex = hipFit.vertex;
+
+    // Feet pulled up in the air: the toes plateau and their parabola puts the edges wrong (takeoff late,
+    // apex early), while the hips still fly a clean parabola. Then the edges come from the hips: the first
+    // and last frames clearly in the air, the toes moved back to the floor along the hip parabola.
+    let plateau = false;
+    if (toeFit.rms / bodyPx > POOR_FIT && hipFit.rms / bodyPx <= POOR_FIT && hipFit.a < 0) {
+      const e = hipEdges(s, fl.frames, hipFit, level(fl.before), level(fl.after), bodyPx);
+      if (e) {
+        const rise = (g / 2) * (tApex - e.tOff) ** 2, flight = (g * (e.tOn - e.tOff) ** 2) / 8;
+        if (Math.max(rise, flight) <= PLATEAU_RATIO * Math.min(rise, flight)) {
+          tOff = e.tOff;
+          tOn = e.tOn;
+          plateau = true;
+        }
+      }
+    }
 
     const pxPerMetre = bodyPx / (NOSE_TO_HEEL_PER_STATURE * stature);
     const gImplied = (-2 * hipFit.a) / pxPerMetre;
-    const hPrimary = (g / 2) * (tApex - tOff) ** 2;
+    const hRise = (g / 2) * (tApex - tOff) ** 2;
     const hFlight = (g * (tOn - tOff) ** 2) / 8;
+    const hPrimary = Math.min(hRise, hFlight);
 
     const j: Jump = {
-      tOff, tOn, tApex, hPrimary, hFlight,
+      tOff, tOn, tApex, hPrimary, hRise, hFlight,
       airborneFrames: fl.frames.length,
       gImplied,
       hipRmsRel: hipFit.rms / bodyPx,
@@ -120,14 +152,50 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     // Wide bounds: the body-size scale is distorted by camera tilt (a floor-level camera
     // read 6–8.5), but a 2× slow-motion clip still reads ≈ 2.5.
     else if (gImplied < 4 || gImplied > 20) j.flags.push("g-implausible");
-    if (Math.max(j.hipRmsRel, j.toeRmsRel) > 0.015) j.flags.push("poor-fit");
-    if (Math.abs(hPrimary - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
+    if (plateau) j.flags.push("toe-plateau");
+    else if (Math.max(j.hipRmsRel, j.toeRmsRel) > POOR_FIT) j.flags.push("poor-fit");
+    if (Math.abs(hRise - hFlight) > 0.15 * hFlight) j.flags.push("disagree");
     if (j.floorShiftRel > 0.02) j.flags.push("camera-moved");
     if (j.lostRel > MAX_LOST || j.outsideRel > MAX_OUTSIDE) j.flags.push("out-of-view");
-    if (!(Math.max(hPrimary, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hPrimary, hFlight))) j.flags.push("inconsistent");
+    if (!(Math.max(hRise, hFlight) <= MAX_HEIGHT_RATIO * Math.min(hRise, hFlight)) || !(hRise <= MAX_RISE_OVER_FLIGHT * hFlight))
+      j.flags.push("inconsistent");
     jumps.push(j);
   }
   return jumps;
+}
+
+/** Residuals above this fraction of body height: the points don't follow a parabola. */
+export const POOR_FIT = 0.015;
+/**
+ * The hip-based edges of a toe plateau are used if their two heights agree within this factor
+ * (docs/accuracy-ideas.md: recovers the plateau jumps of 2026-10-15/19/21 without changing others).
+ */
+export const PLATEAU_RATIO = 1.3;
+/** Toes this far above the floor (fraction of body height) count as clearly in the air. */
+const AIR_LIFT = 0.035;
+
+/**
+ * Takeoff and landing from the hips: the first and last frames with the toes clearly in the air,
+ * moved back to the floor along the hip parabola (legs taken as rigid for that last bit), and kept
+ * between the last frame on the floor and the first in the air.
+ */
+export function hipEdges(s: Signals, frames: number[], hipFit: Quadratic, levelOff: number, levelOn: number, bodyPx: number) {
+  const air = AIR_LIFT * bodyPx;
+  const mid = hipFit.vertex;
+  const a = frames.find((i) => s.t[i] <= mid && s.toe[i] - levelOff > air);
+  const b = [...frames].reverse().find((i) => s.t[i] >= mid && s.toe[i] - levelOn > air);
+  if (a === undefined || b === undefined) return null;
+  const ra = quadraticRoots(hipFit, evalQuadratic(hipFit, s.t[a]) - (s.toe[a] - levelOff));
+  const rb = quadraticRoots(hipFit, evalQuadratic(hipFit, s.t[b]) - (s.toe[b] - levelOn));
+  if (!ra || !rb) return null;
+  let tOff = ra[0], tOn = rb[1];
+  let c = a - 1; while (c >= 0 && !(Number.isFinite(s.toe[c]) && s.toe[c] - levelOff <= air * 0.5)) c--;
+  let d = b + 1; while (d < s.t.length && !(Number.isFinite(s.toe[d]) && s.toe[d] - levelOn <= air * 0.5)) d++;
+  if (c >= 0) tOff = Math.max(tOff, s.t[c]);
+  tOff = Math.min(tOff, s.t[a]);
+  if (d < s.t.length) tOn = Math.min(tOn, s.t[d]);
+  tOn = Math.max(tOn, s.t[b]);
+  return { tOff, tOn };
 }
 
 /** A fast toe step: at least this fraction of the jump's fastest rise (or fall). */

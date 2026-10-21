@@ -3,15 +3,19 @@ import { Platform, StyleSheet } from "react-native";
 import { boingPose, type PoseDetector } from "react-native-boing-pose";
 import {
   Camera,
+  type CameraRef,
   type CameraSessionConfig,
   type Frame,
   useCameraDevice,
   useFrameOutput,
   useVideoOutput,
 } from "react-native-vision-camera";
+import { Accelerometer, Gyroscope } from "expo-sensors";
 import { scheduleOnRN } from "react-native-worklets";
 import { bestFps } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
+import { SampleBuffer } from "../logic/motion";
+import { keepClip } from "../native/debug";
 import { fromDetect, toFrames } from "../logic/pose";
 import { deleteQuietly, modelPath, toPath } from "../native/models";
 import { PoseFeed, Skeleton } from "./Skeleton";
@@ -32,18 +36,44 @@ interface Props {
   onInfo: (info: CameraInfo) => void;
   /** Receives the controller while the camera runs (null when it stops). */
   controllerRef: React.MutableRefObject<LiveController | null>;
+  /** Debug session to keep the clips of measured jumps in, or null to delete them. */
+  debugSession: string | null;
+  /** A clip was kept (its file name). */
+  onKeptClip?: (name: string) => void;
 }
 
+/** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
+const SENSOR_MS = 10;
+
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, debugSession, onKeptClip }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
   const model = useRef<string | null>(null);
+  /** Model for re-measuring jumps from the recording: heavy (steadier feet, see docs/evaluation). */
+  const measureModel = useRef<string | null>(null);
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
+  const cameraRef = useRef<CameraRef>(null);
+  const maxFps = useMemo(() => (device ? Math.max(0, ...device.supportedFPSRanges.map((r) => r.max)) : 0), [device]);
   const eventsRef = useRef(events);
   eventsRef.current = events;
+  const debugRef = useRef({ debugSession, onKeptClip });
+  debugRef.current = { debugSession, onKeptClip };
+
+  // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
+  const acc = useMemo(() => new SampleBuffer(60), []);
+  const gyro = useMemo(() => new SampleBuffer(60), []);
+  useEffect(() => {
+    Accelerometer.setUpdateInterval(SENSOR_MS);
+    Gyroscope.setUpdateInterval(SENSOR_MS);
+    const subs = [
+      Accelerometer.addListener((e) => acc.add([e.timestamp, e.x, e.y, e.z])),
+      Gyroscope.addListener((e) => gyro.add([e.timestamp, e.x, e.y, e.z])),
+    ];
+    return () => subs.forEach((x) => x.remove());
+  }, [acc, gyro]);
 
   // Pose model (downloaded on first use) and the live detector.
   useEffect(() => {
@@ -58,6 +88,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         info.current = { ...info.current, delegate: det.delegate };
         onInfo(info.current);
         setDetector(det);
+        // In the background; until it's there (or if it can't be loaded), re-measure with the live model.
+        modelPath("heavy").then((h) => { if (alive) measureModel.current = h; }, () => {});
       })
       .catch((e) => alive && onError(e));
     return () => {
@@ -88,15 +120,34 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           };
         },
         async analyzeClip(path, from, to) {
-          const r = await boingPose.analyzeVideo(
-            path,
-            { modelPath: toPath(model.current!), from, to, minInterval: 0, preferGpu: true },
-            () => {},
-          );
-          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: clipFacts(path) };
+          const run = (m: string) =>
+            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: true }, () => {});
+          let heavy = measureModel.current;
+          let r;
+          try {
+            r = await run(heavy ?? model.current!);
+          } catch (e) {
+            if (!heavy) throw e;
+            // A heavy model that won't load (damaged download): stay with the live model from now on.
+            measureModel.current = heavy = null;
+            r = await run(model.current!);
+          }
+          const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
+          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
         },
-        deleteClip(path) {
-          deleteQuietly(path);
+        deleteClip(path, hasJumps) {
+          const { debugSession: id, onKeptClip: kept } = debugRef.current;
+          const name = id && hasJumps ? keepClip(path, id) : null;
+          if (name) kept?.(name);
+          else deleteQuietly(path);
+        },
+        motion: (from, to) => ({ acc: acc.window(from, to), gyro: gyro.window(from, to) }),
+        camera: () => {
+          const c = cameraRef.current?.controller;
+          return {
+            fps: info.current.fps, maxFps,
+            ...(c ? { exposureS: c.exposureDuration, iso: c.iso, exposureMode: c.exposureMode } : {}),
+          };
         },
       },
       {
@@ -105,8 +156,10 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         result: (m) => eventsRef.current.result(m),
         log: (e) => eventsRef.current.log?.(e),
       },
+      // The heavy model takes several seconds per jump on a mid-range phone.
+      { timeoutMs: 60_000 },
     );
-  }, [detector, videoOutput]);
+  }, [detector, videoOutput, acc, gyro, maxFps]);
 
   useEffect(() => {
     controllerRef.current = controller;
@@ -152,6 +205,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   return (
     <>
       <Camera
+        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         isActive
         device={device}

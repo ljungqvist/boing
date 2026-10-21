@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Jump } from "../../../src/analysis/jumps";
-import { closestJump, frameRate, jumpWindows, refinable, summarize, timeScaleOf, uniqueJumps } from "./measure";
+import { accepted, closestJump, frameRate, jumpWindows, refinable, summarize, timeScaleOf, uniqueJumps } from "./measure";
 
 const jump = (tOff: number, tOn = tOff + 0.4, flags: Jump["flags"] = []) => ({ tOff, tOn, flags }) as Jump;
 
@@ -16,6 +16,20 @@ describe("refinable", () => {
     expect(refinable(jump(0, 0.4, ["few-frames"]))).toBe(true);
     expect(refinable(jump(0, 0.4, ["few-frames", "not-parabola"]))).toBe(false);
     expect(refinable(jump(0, 0.4, ["camera-moved"]))).toBe(true);
+  });
+
+  it("re-measures jumps the live frame rate couldn't measure cleanly", () => {
+    // Noisy points or an apex too late at ~20 fps may be fine from every recorded frame.
+    expect(refinable(jump(0, 0.4, ["inconsistent"]))).toBe(true);
+    expect(refinable(jump(0, 0.4, ["poor-fit", "few-frames"]))).toBe(true);
+    expect(refinable(jump(0, 0.4, ["out-of-view"]))).toBe(false);
+  });
+});
+
+describe("accepted", () => {
+  it("rejects unsteady points but only notes a moved camera", () => {
+    expect(accepted(jump(0, 0.4, ["poor-fit"]))).toBe(false);
+    expect(accepted(jump(0, 0.4, ["camera-moved", "disagree"]))).toBe(true);
   });
 });
 
