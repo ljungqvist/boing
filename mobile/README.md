@@ -89,16 +89,29 @@ Results against the web app: `../docs/evaluation/2026-10-14-native-app.md`.
 On an Apple-silicon Mac, use an Android 13 emulator image with `-gpu host`: newer images advertise
 CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path crashes (SIGILL).
 
-## Debug recordings and the local dev server
+## Debug recordings
+
+- Menu → "Keep recordings of measured jumps": from the next Start, each re-measured jump's clip stays on
+  the phone with a `session.json` (diagnostics, pose per frame, accelerometer/gyroscope around the jump).
+  "Send recordings" uploads them to the server field's address and frees the phone.
+- Default server: https://ljungqvist.info/boing (`../server/kapsi/`, PHP on Kapsi), so anyone with the
+  APK can send recordings. Uploads need the `X-Boing-Key` header; CI builds the key into the APK from the
+  GitHub secret `BOING_UPLOAD_KEY` (a local build without `EXPO_PUBLIC_BOING_UPLOAD_KEY` set gets 403).
+
+```
+tools/kapsi.sh pull     # (repo root) fetch uploads into ../boing-data/uploads/<session>/
+tools/kapsi.sh deploy   # after changing server/kapsi/
+tools/kapsi.sh rotate && tools/kapsi.sh key   # new key; installed APKs stop uploading until rebuilt
+```
+
+On the local network the old dev server still works: put `http://<this computer>:8765` in the server
+field (it ignores the key).
 
 ```
 python3 tools/devserver.py        # http://<this computer>:8765/ on the local network
 ```
 
 - Put an APK into `../boing-data/apk/` and open the address on the phone to download and install it.
-- Menu → "Keep recordings of measured jumps": from the next Start, each re-measured jump's clip stays on
-  the phone with a `session.json` (diagnostics, pose per frame, accelerometer/gyroscope around the jump).
-  "Move to computer" uploads them to the server (`../boing-data/uploads/<session>/`) and frees the phone.
 - `npx tsx tools/review/pose_import.ts` turns pose data into landmark files for the review tools.
 
 ## Native module
