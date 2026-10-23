@@ -78,11 +78,12 @@ then delete the videos (the folder fills the disk). Per upload session:
 
 1. Contact sheet per clip (`ffmpeg … fps=…,tile`), then the pose of the plausible clips on every frame
    (MediaPipe heavy) and a feet-above-the-floor detector to find the jumps.
-2. Keep the hard cases first: every jump the app reported wrongly or rejected (session.json logs:
-   shown value, clip, tOff − clipStart; ask the user which readings looked wrong) and real jumps that
-   are awkward (tucked legs, drift, toe landing, arm swing, other people in view, camera knocked).
-   Clean jumps only as a baseline: one or two per person and setup. A hard case still needs its feet
-   visible for a truth. Drop tries and play, and anything not suitable to keep (e.g. an unclothed child).
+2. The library is a varied, tagged test set for new ideas, not an archive. Keep mainly the current edge
+   cases: jumps that look clean but the app gets wrong (session.json logs: shown value, clip,
+   tOff − clipStart; ask the user which readings looked wrong). Also keep some jumps the app can't
+   analyze today, tagged with why, if their truth can be marked from the footage. Clean jumps only as a
+   baseline for a new person or setup. Drop plain bad jumps, tries and play, and anything not suitable to
+   keep (e.g. an unclothed child). Entries that no longer teach anything can be pruned later.
 3. Foot crops of takeoff and landing, mark by eye (`air` = first frame in the air, `contact` = first
    frame back on the floor), write `review/front_<date>/marks.json`, add a section to `build.py`, rebuild.
 4. Run `evaluate.ts`: accepted jumps should land within a frame or two of the app's measurement; a bigger
