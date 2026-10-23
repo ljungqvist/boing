@@ -3,7 +3,7 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, TextInput, View } from "react-native";
+import { Linking, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, View } from "react-native";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
@@ -77,7 +77,6 @@ function Main() {
   // Debug: keep the clips of measured jumps with the session's data, and send them to a computer.
   const [settings, setSettings] = useState(() => loadSettings());
   const keep = settings.keep === true;
-  const server = typeof settings.server === "string" && settings.server ? settings.server : DEFAULT_SERVER;
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
       const next = { ...old, ...patch };
@@ -412,22 +411,12 @@ function Main() {
           </Text>
           {kept.files > 0 && (
             <>
-              <TextInput
-                style={s.input}
-                value={server}
-                onChangeText={(v) => updateSettings({ server: v.trim() })}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                placeholder={DEFAULT_SERVER}
-                placeholderTextColor={C.muted}
-              />
               <Pressable
                 style={s.wide}
                 disabled={sendStatus.startsWith("Sending")}
                 onPress={() => {
                   setSendStatus("Sending…");
-                  sendSessions(server, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
+                  sendSessions(DEFAULT_SERVER, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
                     .then((n) => setSendStatus(`Sent ${n} file${n === 1 ? "" : "s"}; removed from the phone.`))
                     .catch((e) => setSendStatus(`Couldn't send: ${String((e as Error)?.message ?? e)}`))
                     .finally(() => setKept(keptSummary()));
@@ -557,7 +546,6 @@ const s = StyleSheet.create({
   sectionTitle: { color: C.text, fontWeight: "600", marginTop: 16, marginBottom: 4 },
   hint: { color: C.muted, fontSize: 13, marginTop: 12, lineHeight: 19 },
   diag: { color: C.muted, fontSize: 12, marginTop: 6, fontVariant: ["tabular-nums"] },
-  input: { marginTop: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.muted, color: C.text, fontSize: 15 },
   wide: { marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: C.accent, alignItems: "center" },
   wideText: { color: "#1f0d00", fontWeight: "700", fontSize: 15 },
   trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
