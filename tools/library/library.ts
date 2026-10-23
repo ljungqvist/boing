@@ -1,5 +1,5 @@
 /**
- * The local jump library (~/code/boing-data/library, never in git; format in docs/jump-library.md):
+ * The local jump library (~/boing-data/library, never in git; format in docs/jump-library.md):
  * loading entries, their pose data and their truth on the pose's clock.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { PoseFrame, PoseVideo } from "../../src/analysis/types";
 
-export const LIBRARY = process.env.BOING_LIBRARY ?? join(homedir(), "code/boing-data/library");
+export const LIBRARY = process.env.BOING_LIBRARY ?? join(homedir(), "boing-data/library");
 
 export interface LibTruth {
   method: string;

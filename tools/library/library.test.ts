@@ -1,6 +1,6 @@
 /**
  * Accuracy regression on the local jump library. Skipped where the library isn't present (CI, other
- * machines): it lives in ~/code/boing-data/library, never in git.
+ * machines): it lives in ~/boing-data/library, never in git.
  */
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";

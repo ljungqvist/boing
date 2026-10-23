@@ -16,7 +16,7 @@ import sys
 import cv2
 import numpy as np
 
-LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/code/boing-data/library")
+LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/boing-data/library")
 G = 9.81
 thetas = [float(x) for x in (sys.argv[1] if len(sys.argv) > 1 else "0.3,0.5").split(",")]
 views = sys.argv[2].split(",") if len(sys.argv) > 2 else ["front", "side"]

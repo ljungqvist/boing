@@ -1,7 +1,7 @@
 """RTMPose "body with feet" (Halpe26: big toe, small toe, heel) on the 2026-10-19 library jumps, written in
 MediaPipe's 33-point layout so findJumps runs unchanged: "foot index" (31/32) = big toe tip.
 
-Runs in its own venv (rtmlib + onnxruntime): ~/code/boing-data/venv-rtm/bin/python rtm_pose.py [mode]
+Runs in its own venv (rtmlib + onnxruntime): ~/boing-data/venv-rtm/bin/python rtm_pose.py [mode]
 - front: the frames of the app's logged re-measurement (app clip, same times) → pose/2026-10-19/<id>_front_rtm.json
 - side: every 240 fps frame of the native window (takeoff − 1.1 s … landing + 0.9 s) →
   pose/2026-10-19/side/<id>/rtm240.json (per image, no tracking: thinning afterwards equals running at
@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 from rtmlib import BodyWithFeet, PoseTracker
 
-LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/code/boing-data/library")
+LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/boing-data/library")
 mode = sys.argv[1] if len(sys.argv) > 1 else "performance"
 # The person detector only every 8th frame (box from the last pose in between); pose on every frame.
 new_model = lambda: PoseTracker(BodyWithFeet, det_frequency=8, tracking=False, mode=mode, backend="onnxruntime", device="cpu")

@@ -20,8 +20,8 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cut import frame_pts  # noqa: E402
 
-LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/code/boing-data/library")
-MODELS = os.path.expanduser("~/code/boing-data/models")
+LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/boing-data/library")
+MODELS = os.path.expanduser("~/boing-data/models")
 source = sys.argv[1]
 prefix = sys.argv[2] if len(sys.argv) > 2 else ""
 

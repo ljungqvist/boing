@@ -14,9 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 import cv2
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/code/boing-data/library")
+LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/boing-data/library")
 PY = next(p for p in (os.path.join(REPO, ".venv/bin/python"), os.path.expanduser("~/code/boing/.venv/bin/python")) if os.path.exists(p))
-MODELS = os.path.expanduser("~/code/boing-data/models")
+MODELS = os.path.expanduser("~/boing-data/models")
 jobs = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 
 lib = json.load(open(os.path.join(LIB, "jumps.json")))

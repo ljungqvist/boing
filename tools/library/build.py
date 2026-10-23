@@ -1,4 +1,4 @@
-"""Build the local jump library (~/code/boing-data/library) from the recordings and truths in boing-data.
+"""Build the local jump library (~/boing-data/library) from the recordings and truths in boing-data.
 
 Idempotent: existing clips are kept (pass --force to cut again). Writes library/jumps.json and the
 clips and pose files it refers to; never touches the sources. See docs/jump-library.md.
@@ -244,9 +244,6 @@ class Builder:
     # The app logged poses for only a few of them, so the pose is MediaPipe heavy on every frame of the cut clip.
     def session_20261023(self):
         print("2026-10-23 front 60 fps sessions", flush=True)
-        import cv2
-        import mediapipe as mp
-        from mediapipe.tasks.python import BaseOptions, vision
         from cut import frame_pts
         marks = json.load(open(os.path.join(self.data, "review/front_20261023/marks.json")))
         for m in marks["jumps"]:
@@ -263,6 +260,9 @@ class Builder:
             flight_ms = (on_t - off_t) * 1000
             pose_file = os.path.join(self.lib, f"pose/2026-10-23/{jid}_front_heavy.json")
             if not os.path.exists(pose_file) or self.force:
+                import cv2  # only to make a missing pose (gwb has no mediapipe; the poses are built)
+                import mediapipe as mp
+                from mediapipe.tasks.python import BaseOptions, vision
                 lmk = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
                     base_options=BaseOptions(model_asset_path=os.path.join(self.data, "models/pose_landmarker_heavy.task")),
                     running_mode=vision.RunningMode.VIDEO, num_poses=1))
@@ -433,7 +433,7 @@ class Builder:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default=os.path.expanduser("~/code/boing-data"))
+    ap.add_argument("--data", default=os.path.expanduser("~/boing-data"))
     ap.add_argument("--force", action="store_true")
     a = ap.parse_args()
     Builder(os.path.abspath(a.data), a.force).run()

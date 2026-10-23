@@ -16,7 +16,7 @@ import torch
 from PIL import Image
 from transformers import AutoProcessor, VitPoseForPoseEstimation
 
-LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/code/boing-data/library")
+LIB = os.environ.get("BOING_LIBRARY") or os.path.expanduser("~/boing-data/library")
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "usyd-community/vitpose-plus-huge"
 dev = "mps" if torch.backends.mps.is_available() else "cpu"
 proc = AutoProcessor.from_pretrained(MODEL)

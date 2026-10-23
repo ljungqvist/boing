@@ -1,7 +1,7 @@
 # Jump library
 
 Reference jumps with a truth, for evaluating ideas and for accuracy tests. The data lives **only on
-the developer's machine** in `~/code/boing-data/library/` (override with `BOING_LIBRARY`); it is never
+gwb** (the developer's server, `tools/gwb/README.md`) in `~/boing-data/library/` (override with `BOING_LIBRARY`); it is never
 committed: it holds videos of people. This repository has only the code that builds and reads it.
 
 ## Layout
