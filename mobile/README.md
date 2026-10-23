@@ -93,8 +93,8 @@ CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path cras
 
 - Menu → "Keep recordings of measured jumps": from the next Start, each re-measured jump's clip stays on
   the phone with a `session.json` (diagnostics, pose per frame, accelerometer/gyroscope around the jump).
-  "Send recordings" uploads them to the server field's address and frees the phone.
-- Default server: https://ljungqvist.info/boing (`../server/kapsi/`, PHP on Kapsi), so anyone with the
+  "Send recordings" uploads them to the server and frees the phone.
+- Server (hard-coded): https://ljungqvist.info/boing (`../server/kapsi/`, PHP on Kapsi), so anyone with the
   APK can send recordings. Uploads need the `X-Boing-Key` header; CI builds the key into the APK from the
   GitHub secret `BOING_UPLOAD_KEY` (a local build without `EXPO_PUBLIC_BOING_UPLOAD_KEY` set gets 403).
 
@@ -106,8 +106,8 @@ tools/kapsi.sh deploy   # after changing server/kapsi/
 tools/kapsi.sh rotate && tools/kapsi.sh key   # new key; installed APKs stop uploading until rebuilt
 ```
 
-On the local network the old dev server still works: put `http://<this computer>:8765` in the server
-field (it ignores the key).
+The old local dev server (`tools/devserver.py`) is no longer reachable from the app, since the address
+is hard-coded.
 
 ```
 python3 tools/devserver.py        # http://<this computer>:8765/ on the local network
