@@ -1,0 +1,17 @@
+# Claude Code Remote Control on gwb (copy of ha's): keeps a Remote Control host running, so
+# tools/gwb/triage.sh can open report sessions that push to the owner's phone.
+# Install: tools/gwb/README.md.
+[Unit]
+Description=Claude Code Remote Control (Boing triage on gwb)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/pl/boing
+Environment=PATH=/home/pl/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/pl/.local/bin/claude remote-control --spawn same-dir --capacity 4 --no-create-session-in-dir
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
