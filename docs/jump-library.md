@@ -67,6 +67,12 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 
 ## Adding jumps
 
+Uploads from the app (other people, with consent) are added as data, not code: triage writes
+`library/sources/<session>.json` (`build.py` `from_marks()` documents the fields: upload folder, id
+prefix, person `u-<recording ID>`, `phone`, setup, devices, `marks` per clip, optional tags) and
+rebuilds. Their jumps carry `phone`; `tools/erase.py <recording ID>` removes them, their clips and
+poses when consent is withdrawn (run by gwb's poller for every erase request).
+
 Other people: their OK to keep the footage, a nickname only. Best truth: a second phone at floor level,
 side-on, 240 fps, socks or shoes with a colour that stands out from the floor (`tools/review/side_*`).
 Add a section to `build.py`, rebuild, check the edges by eye (`tools/library/edge_sheets.py`).
