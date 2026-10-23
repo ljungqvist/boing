@@ -1,6 +1,7 @@
 #!/bin/sh
 # The upload server on Kapsi (server/kapsi/, https://ljungqvist.info/boing/).
 # Fetching and triaging uploads: the boing-uploads agent skill (one file at a time, not here).
+#   tools/kapsi.sh test     run server/kapsi/test.sh on Kapsi (php is there, not on the Mac)
 #   tools/kapsi.sh deploy   copy server/kapsi/ to the web root; create the upload key if missing
 #   tools/kapsi.sh rotate   make a new upload key (old APKs can't upload until rebuilt; run key after)
 #   tools/kapsi.sh key      set the GitHub secret BOING_UPLOAD_KEY from the server's key (needs gh)
@@ -14,7 +15,12 @@ case "${1:-}" in
   deploy)
     ssh "$HOST" "mkdir -p $WEB $DATA/uploads && chmod 700 $DATA &&
       { [ -s $DATA/upload-key ] || (umask 077; openssl rand -hex 24 > $DATA/upload-key); }"
-    rsync -av "$REPO/server/kapsi/" "$HOST:$WEB/"
+    rsync -av --exclude test.sh "$REPO/server/kapsi/" "$HOST:$WEB/"
+    ;;
+  test)
+    T=$(ssh "$HOST" mktemp -d)
+    scp -q "$REPO/server/kapsi/index.php" "$REPO/server/kapsi/test.sh" "$HOST:$T/"
+    ssh "$HOST" "sh $T/test.sh; r=\$?; rm -rf $T; exit \$r"
     ;;
   rotate)
     ssh "$HOST" "umask 077; openssl rand -hex 24 > $DATA/upload-key"
@@ -23,5 +29,5 @@ case "${1:-}" in
     ssh "$HOST" cat $DATA/upload-key | gh secret set BOING_UPLOAD_KEY --repo ljungqvist/boing
     ;;
   *)
-    echo "usage: $0 deploy|rotate|key" >&2; exit 2 ;;
+    echo "usage: $0 test|deploy|rotate|key" >&2; exit 2 ;;
 esac

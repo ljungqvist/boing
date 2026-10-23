@@ -46,7 +46,7 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 
 `derived[]` lists the native simulations (`review/sim_*`) of videos that no longer exist.
 
-## Contents (2026-10-21, 50 jumps)
+## Contents (2026-10-23, 60 jumps)
 
 | | jumps | truth | data |
 |---|---|---|---|
@@ -55,6 +55,7 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 | 2026-10-13 120 / 60 fps (deleted) | 4 | hand-marked | full-rate pose; simulation (120 fps) |
 | 2026-10-15 native table / floor (deleted) | 14 (13 with truth) | hand-marked at 60 fps | the app's re-measured pose |
 | 2026-10-21 native front 60 fps (Galaxy S24+) | 8 | hand-marked at 60 fps from the app's clips | app clips (cut), logged poses |
+| 2026-10-23 native front 60 fps (S24+), five people, day and evening light | 10 | hand-marked at 60 fps from the app's clips | app clips (cut), MediaPipe heavy on every frame |
 | reference videos (WhatsApp, contact mat, force plate) | 5 | device values | whole video + pose |
 
 ## Use
@@ -66,6 +67,22 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 
 ## Adding jumps
 
+Uploads from the app (other people, with consent) are added as data, not code: triage writes
+`library/sources/<session>.json` (`build.py` `from_marks()` documents the fields: upload folder, id
+prefix, person `u-<recording ID>`, `phone`, setup, devices, `marks` per clip, optional tags) and
+rebuilds. Their jumps carry `phone`; `tools/erase.py <recording ID>` removes them, their clips and
+poses when consent is withdrawn (run by gwb's poller for every erase request).
+
 Other people: their OK to keep the footage, a nickname only. Best truth: a second phone at floor level,
 side-on, 240 fps, socks or shoes with a colour that stands out from the floor (`tools/review/side_*`).
 Add a section to `build.py`, rebuild, check the edges by eye (`tools/library/edge_sheets.py`).
+
+## Triage of uploads
+
+Done on gwb by the `boing-uploads` agent skill (`tools/gwb/README.md`): unattended, one session at a
+time, by the rules there (current edge cases with video first, clean jumps only as a baseline). Library
+jumps from uploads are `library/sources/<session>.json`; the 2026-10-23 session predates that and is a
+`build.py` section.
+
+The sources of already-built sections can be gone (videos deleted after cutting); `build.py` then keeps
+their entries from the last `jumps.json`, so `jumps.json` and the clips in the library are the record.

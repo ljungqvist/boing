@@ -1,2 +1,2 @@
 RewriteEngine On
-RewriteRule ^upload$ index.php [L,QSA]
+RewriteRule ^(upload|done|erase)$ index.php [L,QSA]

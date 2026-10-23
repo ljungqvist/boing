@@ -65,6 +65,10 @@ class Builder:
     def __init__(self, data, force):
         self.data, self.lib, self.force = data, os.path.join(data, "library"), force
         self.jumps = []
+        # The last build's entries: kept as they are when an entry's source video is gone (deleted after
+        # its clip was cut, the original being on the server only), instead of failing.
+        old = os.path.join(self.lib, "jumps.json")
+        self.previous = {j["id"]: j for j in json.load(open(old))["jumps"]} if os.path.exists(old) else {}
 
     def rel(self, path):
         return os.path.relpath(path, self.lib)
@@ -167,38 +171,62 @@ class Builder:
     # 2026-10-21: native app, front camera at 60 fps (Galaxy S24+), hand-marked from the app's own clips.
     def session_20261021(self):
         print("2026-10-21 front 60 fps session", flush=True)
+        spec = json.load(open(os.path.join(self.data, "review/front_20261021/marks.json")))
+        self.from_marks({**spec, "id": "2026-10-21-f", "date": "2026-10-21", "person": "p1", "phone": None,
+                         "session": "2026-10-21 native front 60 fps",
+                         "setup": {"view": "front", "camera": "phone on the floor, front camera", "floor": "wood",
+                                   "footwear": "socks (green)", "arms": "hands on hips", "light": "morning, indoor"},
+                         "devices": {"app": "Samsung Galaxy S24+ (SM-S926B), front camera, 60 fps, 1080×1920"}})
+
+    # Uploads added by triage (boing-uploads skill): library/sources/<session>.json, same form as
+    # from_marks() takes. Data, not code, so gwb's triage can add jumps and tools/erase.py remove them.
+    def sources(self):
+        d = os.path.join(self.lib, "sources")
+        for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if f.endswith(".json"):
+                print(f"source {f}", flush=True)
+                self.from_marks(json.load(open(os.path.join(d, f))))
+
+    def from_marks(self, spec):
+        """Jumps from an app upload with hand-marked edges.
+
+        spec: upload (folder relative to boing-data), id (jump id prefix), date, person, phone (recording
+        ID or None), session, setup, devices, marks {clip: [first frame in the air, first frame back on
+        the floor]}, optional tags {clip: [...]}, fps (default 60), method, precision.
+        """
         from cut import frame_pts
-        rev = os.path.join(self.data, "review/front_20261021")
-        marks = json.load(open(os.path.join(rev, "marks.json")))
-        up = os.path.join(self.data, marks["upload"])
+        up = os.path.join(self.data, spec["upload"])
         sess = json.load(open(os.path.join(up, "session.json")))
-        logs = sorted((l for l in sess["logs"] if l.get("clip") in marks["marks"]), key=lambda l: l["tOff"])
+        marks, date, fps = spec["marks"], spec["date"], spec.get("fps", 60)
+        logs = sorted((l for l in sess["logs"] if l.get("clip") in marks), key=lambda l: l["tOff"])
         for n, log in enumerate(logs, 1):
-            jid = f"2026-10-21-f{n}"
+            jid = f"{spec['id']}{n}"
             src = os.path.join(up, log["clip"])
+            if not os.path.exists(src) and jid in self.previous:
+                self.jumps.append(self.previous[jid])
+                continue
             pts, _ = frame_pts(src)
-            air, contact = marks["marks"][log["clip"]]
-            info = self.cut(src, max(0, air - 180), len(pts) - 1, os.path.join(self.lib, f"clips/2026-10-21/{jid}_front60.mp4"))
+            air, contact = marks[log["clip"]]
+            clip_file = os.path.join(self.lib, f"clips/{date}/{jid}_front{fps}.mp4")
+            info = self.cut(src, max(0, air - 3 * fps), len(pts) - 1, clip_file)
             off_t = (pts[air - 1] + pts[air]) / 2  # clip seconds
             on_t = (pts[contact - 1] + pts[contact]) / 2
             flight_ms = (on_t - off_t) * 1000
-            pose_file = os.path.join(self.lib, f"pose/2026-10-21/{jid}_front_heavy.json")
+            pose_file = os.path.join(self.lib, f"pose/{date}/{jid}_front_heavy.json")
             p = log["pose"]
-            write_json(pose_file, {"width": p["width"], "height": p["height"], "fps": log.get("fps", 60),
+            write_json(pose_file, {"width": p["width"], "height": p["height"], "fps": log.get("fps", fps),
                                    "frames": expand_compact(p), "model": "heavy", "source": "app re-measurement (logged)"})
             rejected = bool(log.get("error"))
-            self.jumps.append({
-                "id": jid, "person": "p1", "date": "2026-10-21", "session": "2026-10-21 native front 60 fps",
-                "setup": {"view": "front", "camera": "phone on the floor, front camera", "floor": "wood",
-                          "footwear": "socks (green)", "arms": "hands on hips", "light": "morning, indoor"},
-                "devices": {"app": "Samsung Galaxy S24+ (SM-S926B), front camera, 60 fps, 1080×1920"},
-                "clips": [{"role": "app-front", "file": self.rel(os.path.join(self.lib, f"clips/2026-10-21/{jid}_front60.mp4")),
+            entry = {
+                "id": jid, "person": spec["person"], "date": date, "session": spec["session"],
+                "setup": spec["setup"], "devices": spec["devices"],
+                "clips": [{"role": "app-front", "file": self.rel(clip_file),
                            "frameOffset": info["frameOffset"], "frames": info["frames"], "source": info["source"],
                            "clipStart": log["clipStart"] + pts[info["frameOffset"]],
                            "time": "app frame clock = clip seconds + clipStart"}],
                 "pose": [{"role": "front-heavy-app", "file": self.rel(pose_file), "clock": "app frame clock"}],
-                "truth": {"method": "hand-marked from 60 fps foot crops of the app's clip (front view): last frame on the floor / first in the air, last in the air / first on the floor, edges halfway",
-                          "precision": "±1 frame (≈17 ms) per edge",
+                "truth": {"method": spec.get("method", f"hand-marked from {fps} fps foot crops of the app's clip (front view): last frame on the floor / first in the air, last in the air / first on the floor, edges halfway"),
+                          "precision": spec.get("precision", f"±1 frame (≈{round(1000 / fps)} ms) per edge"),
                           "takeoffT": round(off_t + log["clipStart"], 5), "landingT": round(on_t + log["clipStart"], 5),
                           "clockNote": "app frame clock (original clip pts + clipStart)",
                           "takeoffFrame": air - info["frameOffset"], "landingFrame": contact - info["frameOffset"],
@@ -206,7 +234,68 @@ class Builder:
                 "app": {**{k: log.get(k) for k in ("tOff", "hLive", "framesLive", "flagsLive", "fpsLive", "h", "hRise", "hFlight",
                                                    "frames", "g", "offset", "flags", "error", "clipStart", "window", "video", "camera", "ms")},
                         "shownCm": None if rejected else round(log["h"] * 100, 1)},
-                "tags": ["rejected-poor-fit"] if rejected else ["clean"],
+                "tags": spec.get("tags", {}).get(log["clip"]) or (["rejected-poor-fit"] if rejected else ["clean"]),
+            }
+            if spec.get("phone"):
+                entry["phone"] = spec["phone"]
+            self.jumps.append(entry)
+
+    # 2026-10-23: native app, front camera at 60 fps, several people; only the clean jumps of a big upload.
+    # The app logged poses for only a few of them, so the pose is MediaPipe heavy on every frame of the cut clip.
+    def session_20261023(self):
+        print("2026-10-23 front 60 fps sessions", flush=True)
+        import cv2
+        import mediapipe as mp
+        from mediapipe.tasks.python import BaseOptions, vision
+        from cut import frame_pts
+        marks = json.load(open(os.path.join(self.data, "review/front_20261023/marks.json")))
+        for m in marks["jumps"]:
+            jid, air, contact = m["id"], m["air"], m["contact"]
+            src = os.path.join(self.data, "uploads", m["upload"], m["clip"])
+            if not os.path.exists(src) and jid in self.previous:
+                self.jumps.append(self.previous[jid])
+                continue
+            pts, _ = frame_pts(src)
+            clip = os.path.join(self.lib, f"clips/2026-10-23/{jid}_front60.mp4")
+            info = self.cut(src, max(0, air - 180), min(len(pts) - 1, contact + 150), clip)
+            off_t = (pts[air - 1] + pts[air]) / 2  # original video seconds
+            on_t = (pts[contact - 1] + pts[contact]) / 2
+            flight_ms = (on_t - off_t) * 1000
+            pose_file = os.path.join(self.lib, f"pose/2026-10-23/{jid}_front_heavy.json")
+            if not os.path.exists(pose_file) or self.force:
+                lmk = vision.PoseLandmarker.create_from_options(vision.PoseLandmarkerOptions(
+                    base_options=BaseOptions(model_asset_path=os.path.join(self.data, "models/pose_landmarker_heavy.task")),
+                    running_mode=vision.RunningMode.VIDEO, num_poses=1))
+                cap = cv2.VideoCapture(clip)
+                W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                frames, last = [], -1
+                for k in range(info["frames"]):
+                    ok, bgr = cap.read()
+                    if not ok:
+                        break
+                    t = pts[info["frameOffset"] + k]
+                    last = max(int(round(t * 1000)), last + 1)
+                    r = lmk.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)), last)
+                    lm = [[round(p.x, 5), round(p.y, 5), round(p.z, 5), round(p.visibility, 3)] for p in r.pose_landmarks[0]] if r.pose_landmarks else None
+                    frames.append({"t": round(t, 6), "lm": lm})
+                write_json(pose_file, {"width": W, "height": H, "fps": 60, "frames": frames, "model": "heavy",
+                                       "source": "MediaPipe heavy, VIDEO mode, every frame of the cut clip (not the app's own run)",
+                                       "clock": "original video seconds"})
+            setup = {"view": "front", "camera": "phone on the floor, front camera", "floor": "wood", "arms": "hands on hips", **m["setup"]}
+            self.jumps.append({
+                "id": jid, "person": m["person"], "date": "2026-10-23", "session": f"2026-10-23 native front 60 fps ({m['upload']})",
+                "setup": setup,
+                "devices": {"app": "Samsung Galaxy S24+ (SM-S926B), front camera, 60 fps, 1080×1920"},
+                "clips": [{"role": "app-front", "file": self.rel(clip), "frameOffset": info["frameOffset"], "frames": info["frames"],
+                           "source": info["source"], "clipStart": round(pts[info["frameOffset"]], 6),
+                           "time": "original video seconds = clip seconds + clipStart"}],
+                "pose": [{"role": "front-heavy-clip", "file": self.rel(pose_file), "clock": "original video seconds"}],
+                "truth": {"method": "hand-marked from 60 fps foot crops of the app's clip (front view): last frame on the floor / first in the air, last in the air / first on the floor, edges halfway",
+                          "precision": "±1 frame (≈17 ms) per edge",
+                          "takeoffT": round(off_t, 5), "landingT": round(on_t, 5), "clockNote": "original video seconds",
+                          "takeoffFrame": air - info["frameOffset"], "landingFrame": contact - info["frameOffset"],
+                          "flightMs": round(flight_ms, 1), "heightCm": h_flight(flight_ms)},
+                "tags": m["tags"],
             })
 
     # Pose-only sessions whose videos were deleted: landmarks of the whole video + hand-marked truth.
@@ -318,6 +407,7 @@ class Builder:
     def run(self):
         self.session_20261019()
         self.session_20261021()
+        self.session_20261023()
         tags_020914 = {5: ["drift-towards-camera"]}
         self.pose_only_video("own-20261014_020914", "2026-10-14",
                              {"view": "front", "camera": "phone on the floor, tilted up", "floor": "tiles", "footwear": "socks", "arms": "hands on hips"},
@@ -331,8 +421,10 @@ class Builder:
                              "user's phone, 4K 60 fps", "±1 frame at 60 fps (17 ms) per edge")
         self.native_20261015()
         self.reference_videos()
+        self.sources()
         lib = {"version": 1, "description": "Boing jump library: reference jumps with truth. Local only, never in git. See docs/jump-library.md.",
-               "people": {"p1": "the app's author", "public": "public video (source URL in the entry)"},
+               "people": {"p1": "the app's author (adult in orange shorts, assumed)", "p2": "child, navy pyjamas (older)", "p3": "child, heart pyjamas (youngest)", "p4": "child, pink hoodie", "p5": "child, grey hoodie", "public": "public video (source URL in the entry)",
+                          "u-<recording ID>": "someone who sent recordings from the app with consent (entry has phone)"},
                "jumps": self.jumps, "derived": self.derived()}
         with open(os.path.join(self.lib, "jumps.json"), "w") as f:
             json.dump(lib, f, indent=1, ensure_ascii=False)

@@ -14,7 +14,8 @@ import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
-import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, newSessionId, saveSettings, sendSessions, writeSession } from "./native/debug";
+import { CONSENT_TITLE, CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId } from "./logic/consent";
+import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, newSessionId, requestErase, saveSettings, sendSessions, writeSession } from "./native/debug";
 import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
@@ -74,9 +75,17 @@ function Main() {
   useEffect(() => {
     if (testing.current) appendTestLog(status.text);
   }, [status]);
-  // Debug: keep the clips of measured jumps with the session's data, and send them to a computer.
-  const [settings, setSettings] = useState(() => loadSettings());
-  const keep = settings.keep === true;
+  // Debug: keep the clips of measured jumps with the session's data and send them to the developer,
+  // only with consent (logic/consent.ts).
+  const [settings, setSettings] = useState<Record<string, unknown>>(() => {
+    const s = loadSettings();
+    if (isPhoneId(s.phoneId)) return s;
+    const next = { ...s, phoneId: newPhoneId() };
+    saveSettings(next);
+    return next;
+  });
+  const phoneId = settings.phoneId as string;
+  const keep = keepActive(settings);
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
       const next = { ...old, ...patch };
@@ -87,6 +96,38 @@ function Main() {
   const keptClips = useRef<string[]>([]);
   const [kept, setKept] = useState(() => keptSummary());
   const [sendStatus, setSendStatus] = useState("");
+  const [ask, setAsk] = useState<"consent" | "withdraw" | null>(null);
+  const [eraseSent, setEraseSent] = useState(true);
+
+  // A deletion request that couldn't be sent when consent was withdrawn (the old recording ID):
+  // retried at every start.
+  useEffect(() => {
+    const old = settings.pendingErase;
+    if (!isPhoneId(old)) return;
+    requestErase(DEFAULT_SERVER, old)
+      .then(() => updateSettings({ pendingErase: null }))
+      .catch(() => {});
+    // Once per start.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A new recording ID after withdrawing: anything sent with the old one can be deleted for good,
+  // even if the person agrees again later.
+  const withdraw = (eraseAll: boolean) => {
+    const old = phoneId;
+    deleteSessions();
+    setKept(keptSummary());
+    updateSettings({ keep: false, consent: null, phoneId: newPhoneId(), pendingErase: eraseAll ? old : null });
+    setAsk(null);
+    if (!eraseAll) return setSendStatus("Consent withdrawn. Recordings on this phone deleted.");
+    setSendStatus("Consent withdrawn. Sending the deletion request…");
+    requestErase(DEFAULT_SERVER, old)
+      .then(() => {
+        updateSettings({ pendingErase: null });
+        setSendStatus("Consent withdrawn. Deletion requested: everything you sent is deleted within 30 days.");
+      })
+      .catch(() => setSendStatus("Consent withdrawn. The deletion request is sent the next time Boing starts with a connection."));
+  };
 
   const showFlash = useCallback((f: Flash, ms = FLASH_MS) => {
     clearTimeout(flashTimer.current);
@@ -136,7 +177,7 @@ function Main() {
       setLogs((xs) => {
         const next = [e, ...xs].slice(0, 50);
         if (debugSession) {
-          writeSession(debugSession, debugPackage(deviceContext(facing, lastInfo.current), next, keptClips.current));
+          writeSession(debugSession, debugPackage({ ...deviceContext(facing, lastInfo.current), phoneId, consent: settings.consent }, next, keptClips.current));
           setKept(keptSummary());
         }
         return next;
@@ -402,9 +443,54 @@ function Main() {
             </>
           )}
           <Text style={s.sectionTitle}>Debug recordings</Text>
-          <Pressable style={s.wide} onPress={() => updateSettings({ keep: !keep })}>
-            <Text style={s.wideText}>Keep recordings of measured jumps: {keep ? "on" : "off"}</Text>
-          </Pressable>
+          {ask === "consent" ? (
+            <>
+              <Text style={s.consentTitle}>{CONSENT_TITLE}</Text>
+              {consentText(phoneId).map((p, i) => (
+                <Text key={i} style={s.consent}>{p}</Text>
+              ))}
+              <View style={s.choices}>
+                <Pressable style={[s.wide, s.choice, s.secondary]} onPress={() => setAsk(null)}>
+                  <Text style={s.secondaryText}>Disagree</Text>
+                </Pressable>
+                <Pressable
+                  style={[s.wide, s.choice]}
+                  onPress={() => {
+                    updateSettings({ keep: true, consent: { version: CONSENT_VERSION, at: new Date().toISOString() } });
+                    setAsk(null);
+                  }}
+                >
+                  <Text style={s.wideText}>Agree</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : ask === "withdraw" ? (
+            <>
+              <Text style={s.consentTitle}>Withdraw consent?</Text>
+              <Text style={s.consent}>
+                Boing stops keeping recordings and deletes the ones on this phone that haven't been sent.
+              </Text>
+              <Pressable style={s.check} onPress={() => setEraseSent(!eraseSent)}>
+                <Text style={s.checkBox}>{eraseSent ? "☑" : "☐"}</Text>
+                <Text style={s.consent}>Also delete everything I've already sent (recording ID {phoneId})</Text>
+              </Pressable>
+              <View style={s.choices}>
+                <Pressable style={[s.wide, s.choice, s.secondary]} onPress={() => setAsk(null)}>
+                  <Text style={s.secondaryText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={[s.wide, s.choice]} onPress={() => withdraw(eraseSent)}>
+                  <Text style={s.wideText}>Withdraw</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Pressable
+              style={s.wide}
+              onPress={() => (keep ? updateSettings({ keep: false }) : hasConsent(settings) ? updateSettings({ keep: true }) : setAsk("consent"))}
+            >
+              <Text style={s.wideText}>Keep recordings of measured jumps: {keep ? "on" : "off"}</Text>
+            </Pressable>
+          )}
           <Text style={s.hint}>
             {keep ? "From the next Start, each measured jump's video, pose and motion data stay on the phone. " : ""}
             Kept: {kept.files} file{kept.files === 1 ? "" : "s"} in {kept.sessions} session{kept.sessions === 1 ? "" : "s"}, {kept.mb} MB.
@@ -416,7 +502,7 @@ function Main() {
                 disabled={sendStatus.startsWith("Sending")}
                 onPress={() => {
                   setSendStatus("Sending…");
-                  sendSessions(DEFAULT_SERVER, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
+                  sendSessions(DEFAULT_SERVER, phoneId, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
                     .then((n) => setSendStatus(`Sent ${n} file${n === 1 ? "" : "s"}; removed from the phone.`))
                     .catch((e) => setSendStatus(`Couldn't send: ${String((e as Error)?.message ?? e)}`))
                     .finally(() => setKept(keptSummary()));
@@ -437,6 +523,11 @@ function Main() {
             </>
           )}
           {sendStatus !== "" && <Text style={s.hint}>{sendStatus}</Text>}
+          {hasConsent(settings) && ask === null && (
+            <Pressable onPress={() => { setEraseSent(true); setAsk("withdraw"); }}>
+              <Text style={[s.hint, { color: C.accent }]}>Withdraw consent · recording ID {phoneId}</Text>
+            </Pressable>
+          )}
           {ignored.length > 0 && (
             <>
               <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
@@ -548,6 +639,14 @@ const s = StyleSheet.create({
   diag: { color: C.muted, fontSize: 12, marginTop: 6, fontVariant: ["tabular-nums"] },
   wide: { marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: C.accent, alignItems: "center" },
   wideText: { color: "#1f0d00", fontWeight: "700", fontSize: 15 },
+  consentTitle: { color: C.text, fontWeight: "700", fontSize: 16, marginTop: 12 },
+  consent: { color: C.text, fontSize: 14, lineHeight: 20, marginTop: 8, flexShrink: 1 },
+  choices: { flexDirection: "row", gap: 10 },
+  choice: { flex: 1 },
+  secondary: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.muted },
+  secondaryText: { color: C.text, fontWeight: "700", fontSize: 15 },
+  check: { flexDirection: "row", gap: 10, alignItems: "flex-start", marginTop: 8 },
+  checkBox: { color: C.accent, fontSize: 20, marginTop: 6 },
   trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
 });
 
