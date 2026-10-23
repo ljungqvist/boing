@@ -2,12 +2,17 @@
 // Boing upload server on Kapsi (https://ljungqvist.info/boing/), the public twin of tools/devserver.py.
 //   GET  /boing/                              page with links to the APKs (GitHub releases)
 //   PUT  /boing/upload?session=S&name=N       saves the body to <data>/uploads/S/N
-//        header X-Boing-Key must match <data>/upload-key
+//   POST /boing/done?session=S                session S is complete: <data>/uploads/S/.done
+//   POST /boing/erase?phone=P                 consent withdrawn, delete everything from phone P (12 hex):
+//        removes <data>/uploads/*_P now, appends {phone, at} to <data>/erase-requests.jsonl for gwb
+//        (which deletes its copies, tools/erase.py) and mails the owner
+//   PUT and POST need the header X-Boing-Key, matching <data>/upload-key.
 // <data> is ~/sites/ljungqvist.info/boing-data, next to www/ (the web host doesn't see the rest of ~).
-// Deploy: tools/kapsi.sh deploy. Uploads are fetched one by one over ssh (boing-uploads agent skill).
+// Deploy: tools/kapsi.sh deploy. gwb fetches complete sessions every minute (tools/gwb/poll.sh).
 
 const MAX_BYTES = 500 * 1000 * 1000;
-$data = dirname(__DIR__, 2) . '/boing-data';
+const OWNER = 'boing@ljungqvist.info';
+$data = getenv('BOING_DATA') ?: dirname(__DIR__, 2) . '/boing-data';
 
 function reply(int $code, string $body, string $type = 'text/plain; charset=utf-8'): void {
     http_response_code($code);
@@ -27,7 +32,7 @@ function safe(?string $name): ?string {
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-if (!preg_match('#/upload$#', $path)) {
+if (!preg_match('#/(upload|done|erase)$#', $path, $route)) {
     if ($method !== 'GET' && $method !== 'HEAD') reply(405, 'method not allowed');
     reply(200, <<<HTML
 <!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>
@@ -46,7 +51,33 @@ $want = @file_get_contents("$data/upload-key");
 $got = $_SERVER['HTTP_X_BOING_KEY'] ?? '';
 if ($want === false || trim($want) === '' || !hash_equals(trim($want), $got)) reply(403, 'bad key');
 
+/** Deletes a folder and everything in it. */
+function rmtree(string $dir): void {
+    foreach (scandir($dir) ?: [] as $f) {
+        if ($f === '.' || $f === '..') continue;
+        is_dir("$dir/$f") && !is_link("$dir/$f") ? rmtree("$dir/$f") : unlink("$dir/$f");
+    }
+    rmdir($dir);
+}
+
+if ($route[1] === 'erase') {
+    $phone = $_GET['phone'] ?? '';
+    if (!preg_match('/^[0-9a-f]{12}$/', $phone)) reply(400, 'need phone');
+    $line = json_encode(['phone' => $phone, 'at' => gmdate('Y-m-d\TH:i:s\Z')]) . "\n";
+    if (file_put_contents("$data/erase-requests.jsonl", $line, FILE_APPEND | LOCK_EX) === false) reply(500, 'cannot write');
+    foreach (glob("$data/uploads/*_$phone", GLOB_ONLYDIR) ?: [] as $dir) rmtree($dir);
+    @mail(OWNER, 'Boing: erase request', "Recording ID $phone withdrew consent and asked for deletion.\n" .
+        "Deleted on Kapsi; gwb deletes its copies (tools/erase.py) within a minute.\n");
+    reply(200, 'ok');
+}
+
 $session = safe($_GET['session'] ?? null);
+if ($route[1] === 'done') {
+    if ($session === null || !is_dir("$data/uploads/$session")) reply(404, 'no such session');
+    touch("$data/uploads/$session/.done");
+    reply(200, 'ok');
+}
+
 $name = safe($_GET['name'] ?? null);
 if ($session === null || $name === null) reply(400, 'need session and name');
 
