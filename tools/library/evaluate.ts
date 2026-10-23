@@ -40,6 +40,8 @@ export function librarySets(): LibSet[] {
         add("n30", { name: "front, native 30 fps (2026-10-19)", view: "front", fps: "30", blur: "real" }, j, video);
       else if (p.role === "front-heavy-app" && j.date === "2026-10-21")
         add("n60b", { name: "front, native 60 fps (2026-10-21)", view: "front", fps: "60", blur: "real" }, j, video);
+      else if (p.role === "front-heavy-clip" && j.date === "2026-10-23")
+        add("n60c", { name: "front, 60 fps, pose on every frame of the app's clip (2026-10-23)", view: "front", fps: "60", blur: "real" }, j, video);
       else if (p.role === "front-heavy-app")
         add("n60", { name: "front, native 60 fps (2026-10-15)", view: "front", fps: "60", blur: "real" }, j, video);
       else if (p.role === "front-heavy-full-rate")

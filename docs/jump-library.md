@@ -46,7 +46,7 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 
 `derived[]` lists the native simulations (`review/sim_*`) of videos that no longer exist.
 
-## Contents (2026-10-21, 50 jumps)
+## Contents (2026-10-23, 60 jumps)
 
 | | jumps | truth | data |
 |---|---|---|---|
@@ -55,6 +55,7 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 | 2026-10-13 120 / 60 fps (deleted) | 4 | hand-marked | full-rate pose; simulation (120 fps) |
 | 2026-10-15 native table / floor (deleted) | 14 (13 with truth) | hand-marked at 60 fps | the app's re-measured pose |
 | 2026-10-21 native front 60 fps (Galaxy S24+) | 8 | hand-marked at 60 fps from the app's clips | app clips (cut), logged poses |
+| 2026-10-23 native front 60 fps (S24+), five people, day and evening light | 10 | hand-marked at 60 fps from the app's clips | app clips (cut), MediaPipe heavy on every frame |
 | reference videos (WhatsApp, contact mat, force plate) | 5 | device values | whole video + pose |
 
 ## Use
@@ -69,3 +70,22 @@ has a `<clip>.cut.json` with `frameOffset` (original frame index of clip frame 0
 Other people: their OK to keep the footage, a nickname only. Best truth: a second phone at floor level,
 side-on, 240 fps, socks or shoes with a colour that stands out from the floor (`tools/review/side_*`).
 Add a section to `build.py`, rebuild, check the edges by eye (`tools/library/edge_sheets.py`).
+
+## Triage of a big upload (2026-10-23)
+
+`uploads/` is a scratch folder, not an archive: look through a new upload, keep only the clean jumps,
+then delete the videos (the folder fills the disk). Per upload session:
+
+1. Contact sheet per clip (`ffmpeg … fps=…,tile`), then the pose of the plausible clips on every frame
+   (MediaPipe heavy) and a feet-above-the-floor detector to find the jumps.
+2. Keep a handful of clean, distinct, clothed, front-view jumps (one or two per person and light); drop
+   tries, play, several near-identical jumps, bad framing, and anything not suitable to keep (e.g. an
+   unclothed child). 70 clips gave 10 jumps.
+3. Foot crops of takeoff and landing, mark by eye (`air` = first frame in the air, `contact` = first
+   frame back on the floor), write `review/front_<date>/marks.json`, add a section to `build.py`, rebuild.
+4. Run `evaluate.ts`: accepted jumps should land within a frame or two of the app's measurement; a bigger
+   miss means a wrong mark or a real app failure (look at it).
+5. Delete the videos from `uploads/` (keep the small `session.json`).
+
+The sources of already-built sections are gone after step 5, so `build.py` can only rebuild what is
+still on disk; `jumps.json` and the clips in the library are the record.
