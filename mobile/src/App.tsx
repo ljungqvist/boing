@@ -99,26 +99,31 @@ function Main() {
   const [ask, setAsk] = useState<"consent" | "withdraw" | null>(null);
   const [eraseSent, setEraseSent] = useState(true);
 
-  // A deletion request that couldn't be sent when consent was withdrawn: retried at every start.
+  // A deletion request that couldn't be sent when consent was withdrawn (the old recording ID):
+  // retried at every start.
   useEffect(() => {
-    if (settings.pendingErase !== true) return;
-    requestErase(DEFAULT_SERVER, phoneId)
-      .then(() => updateSettings({ pendingErase: false }))
+    const old = settings.pendingErase;
+    if (!isPhoneId(old)) return;
+    requestErase(DEFAULT_SERVER, old)
+      .then(() => updateSettings({ pendingErase: null }))
       .catch(() => {});
     // Once per start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A new recording ID after withdrawing: anything sent with the old one can be deleted for good,
+  // even if the person agrees again later.
   const withdraw = (eraseAll: boolean) => {
+    const old = phoneId;
     deleteSessions();
     setKept(keptSummary());
-    updateSettings({ keep: false, consent: null, pendingErase: eraseAll });
+    updateSettings({ keep: false, consent: null, phoneId: newPhoneId(), pendingErase: eraseAll ? old : null });
     setAsk(null);
     if (!eraseAll) return setSendStatus("Consent withdrawn. Recordings on this phone deleted.");
     setSendStatus("Consent withdrawn. Sending the deletion request…");
-    requestErase(DEFAULT_SERVER, phoneId)
+    requestErase(DEFAULT_SERVER, old)
       .then(() => {
-        updateSettings({ pendingErase: false });
+        updateSettings({ pendingErase: null });
         setSendStatus("Consent withdrawn. Deletion requested: everything you sent is deleted within 30 days.");
       })
       .catch(() => setSendStatus("Consent withdrawn. The deletion request is sent the next time Boing starts with a connection."));
