@@ -54,6 +54,9 @@ jobs:
 
       - name: Build release APK
         working-directory: mobile/android
+        env:
+          # Upload key for https://ljungqvist.info/boing (tools/kapsi.sh key), inlined into the JS bundle.
+          EXPO_PUBLIC_BOING_UPLOAD_KEY: ${{ secrets.BOING_UPLOAD_KEY }}
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
 
       - uses: actions/upload-artifact@v4

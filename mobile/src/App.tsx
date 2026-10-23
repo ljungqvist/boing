@@ -14,7 +14,7 @@ import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
-import { deleteSessions, keptSummary, loadSettings, newSessionId, saveSettings, sendSessions, writeSession } from "./native/debug";
+import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, newSessionId, saveSettings, sendSessions, writeSession } from "./native/debug";
 import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
@@ -77,7 +77,7 @@ function Main() {
   // Debug: keep the clips of measured jumps with the session's data, and send them to a computer.
   const [settings, setSettings] = useState(() => loadSettings());
   const keep = settings.keep === true;
-  const server = typeof settings.server === "string" ? settings.server : "http://192.168.86.18:8765";
+  const server = typeof settings.server === "string" && settings.server ? settings.server : DEFAULT_SERVER;
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
       const next = { ...old, ...patch };
@@ -419,7 +419,7 @@ function Main() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="url"
-                placeholder="http://computer:8765"
+                placeholder={DEFAULT_SERVER}
                 placeholderTextColor={C.muted}
               />
               <Pressable
@@ -433,7 +433,7 @@ function Main() {
                     .finally(() => setKept(keptSummary()));
                 }}
               >
-                <Text style={s.wideText}>Move to computer</Text>
+                <Text style={s.wideText}>Send recordings</Text>
               </Pressable>
               <Pressable
                 style={s.wide}

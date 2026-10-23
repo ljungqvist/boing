@@ -2,8 +2,18 @@ import { Directory, File, Paths } from "expo-file-system";
 
 /**
  * Debug sessions: the recorded clips of measured jumps and a session.json (diagnostics with pose and
- * motion data), kept on the phone until they're sent to a computer (tools/devserver.py).
+ * motion data), kept on the phone until they're sent to a server: the public one on Kapsi
+ * (server/kapsi/) or a computer on the local network (tools/devserver.py).
  */
+
+/** Default server for "Send recordings". */
+export const DEFAULT_SERVER = "https://ljungqvist.info/boing";
+
+/**
+ * Shared upload key for the Kapsi server, built into the APK by CI from the GitHub secret
+ * BOING_UPLOAD_KEY. Anyone who unpacks the APK can read it: it only keeps out casual abuse.
+ */
+const UPLOAD_KEY = process.env.EXPO_PUBLIC_BOING_UPLOAD_KEY ?? "";
 const root = () => new Directory(Paths.document, "debug");
 
 function sessionDir(id: string): Directory {
@@ -64,7 +74,7 @@ export async function sendSessions(server: string, onProgress: (done: number, to
   for (const { d, files } of all) {
     for (const f of files) {
       const url = `${base}/upload?session=${encodeURIComponent(d.name)}&name=${encodeURIComponent(f.name)}`;
-      const r = await f.upload(url, { httpMethod: "PUT" });
+      const r = await f.upload(url, { httpMethod: "PUT", headers: UPLOAD_KEY ? { "X-Boing-Key": UPLOAD_KEY } : {} });
       if (r.status < 200 || r.status >= 300) throw new Error(`${f.name}: HTTP ${r.status} ${r.body.slice(0, 80)}`);
       onProgress(++done, total);
     }
