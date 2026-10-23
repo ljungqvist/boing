@@ -98,8 +98,10 @@ CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path cras
   APK can send recordings. Uploads need the `X-Boing-Key` header; CI builds the key into the APK from the
   GitHub secret `BOING_UPLOAD_KEY` (a local build without `EXPO_PUBLIC_BOING_UPLOAD_KEY` set gets 403).
 
+Uploads land in `~/sites/ljungqvist.info/boing-data/uploads/<session>/` on Kapsi and are fetched
+file by file over ssh, then removed there.
+
 ```
-tools/kapsi.sh pull     # (repo root) fetch uploads into ../boing-data/uploads/<session>/
 tools/kapsi.sh deploy   # after changing server/kapsi/
 tools/kapsi.sh rotate && tools/kapsi.sh key   # new key; installed APKs stop uploading until rebuilt
 ```

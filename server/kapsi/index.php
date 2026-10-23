@@ -4,7 +4,7 @@
 //   PUT  /boing/upload?session=S&name=N       saves the body to <data>/uploads/S/N
 //        header X-Boing-Key must match <data>/upload-key
 // <data> is ~/sites/ljungqvist.info/boing-data, next to www/ (the web host doesn't see the rest of ~).
-// Deploy: tools/kapsi.sh deploy. Fetch the uploads: tools/kapsi.sh pull.
+// Deploy: tools/kapsi.sh deploy. Uploads are fetched one by one over ssh (boing-uploads agent skill).
 
 const MAX_BYTES = 500 * 1000 * 1000;
 $data = dirname(__DIR__, 2) . '/boing-data';
