@@ -77,24 +77,12 @@ Other people: their OK to keep the footage, a nickname only. Best truth: a secon
 side-on, 240 fps, socks or shoes with a colour that stands out from the floor (`tools/review/side_*`).
 Add a section to `build.py`, rebuild, check the edges by eye (`tools/library/edge_sheets.py`).
 
-## Triage of a big upload (2026-10-23)
+## Triage of uploads
 
-`uploads/` is a scratch folder, not an archive: look through a new upload, keep only the clean jumps,
-then delete the videos (the folder fills the disk). Per upload session:
+Done on gwb by the `boing-uploads` agent skill (`tools/gwb/README.md`): unattended, one session at a
+time, by the rules there (current edge cases with video first, clean jumps only as a baseline). Library
+jumps from uploads are `library/sources/<session>.json`; the 2026-10-23 session predates that and is a
+`build.py` section.
 
-1. Contact sheet per clip (`ffmpeg … fps=…,tile`), then the pose of the plausible clips on every frame
-   (MediaPipe heavy) and a feet-above-the-floor detector to find the jumps.
-2. The library is a varied, tagged test set for new ideas, not an archive. Keep mainly the current edge
-   cases: jumps that look clean but the app gets wrong (session.json logs: shown value, clip,
-   tOff − clipStart; ask the user which readings looked wrong). Also keep some jumps the app can't
-   analyze today, tagged with why, if their truth can be marked from the footage. Clean jumps only as a
-   baseline for a new person or setup. Drop plain bad jumps, tries and play, and anything not suitable to
-   keep (e.g. an unclothed child). Entries that no longer teach anything can be pruned later.
-3. Foot crops of takeoff and landing, mark by eye (`air` = first frame in the air, `contact` = first
-   frame back on the floor), write `review/front_<date>/marks.json`, add a section to `build.py`, rebuild.
-4. Run `evaluate.ts`: accepted jumps should land within a frame or two of the app's measurement; a bigger
-   miss means a wrong mark or a real app failure (look at it).
-5. Delete the videos from `uploads/` (keep the small `session.json`).
-
-The sources of already-built sections are gone after step 5, so `build.py` can only rebuild what is
-still on disk; `jumps.json` and the clips in the library are the record.
+The sources of already-built sections can be gone (videos deleted after cutting); `build.py` then keeps
+their entries from the last `jumps.json`, so `jumps.json` and the clips in the library are the record.
