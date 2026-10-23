@@ -1,9 +1,10 @@
 import { Directory, File, Paths } from "expo-file-system";
+import { uploadFolder } from "../logic/consent";
 
 /**
  * Debug sessions: the recorded clips of measured jumps and a session.json (diagnostics with pose and
  * motion data), kept on the phone until they're sent to a server: the public one on Kapsi
- * (server/kapsi/) or a computer on the local network (tools/devserver.py).
+ * (server/kapsi/). Kept and sent only with consent (logic/consent.ts).
  */
 
 /** Default server for "Send recordings". */
@@ -61,26 +62,42 @@ export function keptSummary(): { sessions: number; files: number; mb: number } {
   return { sessions: sessions().length, files, mb: Math.round(bytes / 1e5) / 10 };
 }
 
+const headers = (): Record<string, string> => (UPLOAD_KEY ? { "X-Boing-Key": UPLOAD_KEY } : {});
+
 /**
- * Uploads every kept session to `server` (PUT <server>/upload?session=…&name=…, the file as body)
- * and deletes each session once all its files arrived. Returns the number of files sent.
+ * Uploads every kept session to `server` (PUT <server>/upload?session=…&name=…, the file as body,
+ * into the folder `<session>_<phoneId>`), then marks it complete (POST <server>/done?session=…) and
+ * deletes it from the phone. Returns the number of files sent.
  */
-export async function sendSessions(server: string, onProgress: (done: number, total: number) => void): Promise<number> {
+export async function sendSessions(
+  server: string,
+  phoneId: string,
+  onProgress: (done: number, total: number) => void,
+): Promise<number> {
   const base = server.replace(/\/+$/, "");
   const all = sessions().map((d) => ({ d, files: d.list().filter((x) => x instanceof File) as File[] }));
   const total = all.reduce((n, s) => n + s.files.length, 0);
   let done = 0;
   onProgress(done, total);
   for (const { d, files } of all) {
+    const folder = encodeURIComponent(uploadFolder(d.name, phoneId));
     for (const f of files) {
-      const url = `${base}/upload?session=${encodeURIComponent(d.name)}&name=${encodeURIComponent(f.name)}`;
-      const r = await f.upload(url, { httpMethod: "PUT", headers: UPLOAD_KEY ? { "X-Boing-Key": UPLOAD_KEY } : {} });
+      const url = `${base}/upload?session=${folder}&name=${encodeURIComponent(f.name)}`;
+      const r = await f.upload(url, { httpMethod: "PUT", headers: headers() });
       if (r.status < 200 || r.status >= 300) throw new Error(`${f.name}: HTTP ${r.status} ${r.body.slice(0, 80)}`);
       onProgress(++done, total);
     }
+    const r = await fetch(`${base}/done?session=${folder}`, { method: "POST", headers: headers() });
+    if (!r.ok) throw new Error(`done: HTTP ${r.status}`);
     d.delete();
   }
   return done;
+}
+
+/** Asks the server to delete everything this phone has sent (POST <server>/erase?phone=…). */
+export async function requestErase(server: string, phoneId: string): Promise<void> {
+  const r = await fetch(`${server.replace(/\/+$/, "")}/erase?phone=${phoneId}`, { method: "POST", headers: headers() });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
 /** Deletes every kept session. */
