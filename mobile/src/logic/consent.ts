@@ -3,7 +3,7 @@
  * the current text. Bump CONSENT_VERSION whenever CONSENT_TEXT changes; the app then asks again.
  */
 
-export const CONSENT_VERSION = 1;
+export const CONSENT_VERSION = 2;
 
 export const CONTACT = "boing@ljungqvist.info";
 
@@ -12,8 +12,10 @@ export const CONSENT_TITLE = "Send recordings to the developer?";
 /** The consent text, paragraph by paragraph. */
 export function consentText(phoneId: string): string[] {
   return [
-    "When this is on, Boing keeps the video of each measured jump on this phone, with pose and motion " +
-      "data (body positions, accelerometer, gyroscope). They're sent only when you tap \"Send recordings\".",
+    "When this is on, Boing records each measured jump, with pose and motion data (body positions, " +
+      "accelerometer, gyroscope), and sends it to the developer automatically right after the jump, in the " +
+      "background, also over mobile data. A jump's video is typically 50-100 MB. A jump that can't be sent " +
+      "stays on the phone and is sent later.",
     `Who: Petter Ljungqvist, Finland (${CONTACT}). Why: to test and improve the height measurement. ` +
       "Recordings are stored on the developer's own computers in Finland, not published and not shared " +
       "with anyone. They're kept at most 2 years; deleted data also disappears from backups as they're " +

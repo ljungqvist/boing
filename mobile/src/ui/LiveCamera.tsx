@@ -36,17 +36,17 @@ interface Props {
   onInfo: (info: CameraInfo) => void;
   /** Receives the controller while the camera runs (null when it stops). */
   controllerRef: React.MutableRefObject<LiveController | null>;
-  /** Debug session to keep the clips of measured jumps in, or null to delete them. */
-  debugSession: string | null;
-  /** A clip was kept (its file name). */
-  onKeptClip?: (name: string) => void;
+  /** Keep the clips of measured jumps (each in a folder of its own) instead of deleting them. */
+  keep: boolean;
+  /** A clip was kept: its folder id and file name. */
+  onKeptClip?: (id: string, name: string) => void;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, debugSession, onKeptClip }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -59,8 +59,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const maxFps = useMemo(() => (device ? Math.max(0, ...device.supportedFPSRanges.map((r) => r.max)) : 0), [device]);
   const eventsRef = useRef(events);
   eventsRef.current = events;
-  const debugRef = useRef({ debugSession, onKeptClip });
-  debugRef.current = { debugSession, onKeptClip };
+  const debugRef = useRef({ keep, onKeptClip });
+  debugRef.current = { keep, onKeptClip };
 
   // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
   const acc = useMemo(() => new SampleBuffer(60), []);
@@ -136,9 +136,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
         },
         deleteClip(path, hasJumps) {
-          const { debugSession: id, onKeptClip: kept } = debugRef.current;
-          const name = id && hasJumps ? keepClip(path, id) : null;
-          if (name) kept?.(name);
+          const { keep: keepIt, onKeptClip: kept } = debugRef.current;
+          const k = keepIt && hasJumps ? keepClip(path) : null;
+          if (k) kept?.(k.id, k.name);
           else deleteQuietly(path);
         },
         motion: (from, to) => ({ acc: acc.window(from, to), gyro: gyro.window(from, to) }),

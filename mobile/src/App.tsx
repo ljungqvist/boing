@@ -3,11 +3,13 @@ import { File, Paths } from "expo-file-system";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Linking, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, View } from "react-native";
+import { Linking, PermissionsAndroid, Platform, Pressable, ScrollView, Settings, Share, StyleSheet, Text, View } from "react-native";
+import { stopUploads } from "boing-upload";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
 import { discardFeedback } from "../../src/analysis/discard";
+import { entriesForClip, type Entry } from "./logic/jumps";
 import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
@@ -15,7 +17,7 @@ import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
 import { CONSENT_TITLE, CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId } from "./logic/consent";
-import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, newSessionId, requestErase, saveSettings, sendSessions, writeSession } from "./native/debug";
+import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, requestErase, saveSettings, startUploading, writeSession } from "./native/debug";
 import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
@@ -92,12 +94,27 @@ function Main() {
       saveSettings(next);
       return next;
     });
-  const [debugSession, setDebugSession] = useState<string | null>(null);
-  const keptClips = useRef<string[]>([]);
+  /** Clips of measured jumps are kept (and sent) in this run: decided at Start. */
+  const [keepNow, setKeepNow] = useState(false);
+  /** The log entries of this run that no kept clip has taken yet. */
+  const clipLogs = useRef<Entry[]>([]);
   const [kept, setKept] = useState(() => keptSummary());
   const [sendStatus, setSendStatus] = useState("");
   const [ask, setAsk] = useState<"consent" | "withdraw" | null>(null);
   const [eraseSent, setEraseSent] = useState(true);
+
+  // Recordings are sent as they come; at every start (and when switched on) whatever is still waiting
+  // is handed to the upload service again, and the list of waiting jumps follows it.
+  useEffect(() => {
+    if (!keep) return;
+    if (Platform.OS === "android" && Number(Platform.Version) >= 33) {
+      // Only for the "Uploading" notification; the upload runs without it.
+      void PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => {});
+    }
+    startUploading(phoneId);
+    const t = setInterval(() => setKept(keptSummary()), 5000);
+    return () => clearInterval(t);
+  }, [keep, phoneId]);
 
   // A deletion request that couldn't be sent when consent was withdrawn (the old recording ID):
   // retried at every start.
@@ -115,6 +132,7 @@ function Main() {
   // even if the person agrees again later.
   const withdraw = (eraseAll: boolean) => {
     const old = phoneId;
+    stopUploads();
     deleteSessions();
     setKept(keptSummary());
     updateSettings({ keep: false, consent: null, phoneId: newPhoneId(), pendingErase: eraseAll ? old : null });
@@ -173,13 +191,10 @@ function Main() {
       addResult(m, true);
     },
     log: (e) => {
+      if (keepNow) clipLogs.current.push(e);
       console.log(`BOING_LOG ${JSON.stringify({ ...e, pose: undefined, motion: undefined })}`);
       setLogs((xs) => {
         const next = [e, ...xs].slice(0, 50);
-        if (debugSession) {
-          writeSession(debugSession, debugPackage({ ...deviceContext(facing, lastInfo.current), phoneId, consent: settings.consent }, next, keptClips.current));
-          setKept(keptSummary());
-        }
         return next;
       });
     },
@@ -199,8 +214,8 @@ function Main() {
       return;
     }
     clear();
-    keptClips.current = [];
-    setDebugSession(keep ? newSessionId() : null);
+    clipLogs.current = [];
+    setKeepNow(keep);
     setSession((n) => n + 1);
     setMode("live");
     setStatus({ text: "Starting the camera…", tone: "idle" });
@@ -307,10 +322,15 @@ function Main() {
             onStep={(text) => setStatus({ text, tone: "idle" })}
             onError={fail}
             onInfo={setInfo}
-            debugSession={debugSession}
-            onKeptClip={(name) => {
-              keptClips.current.push(name);
+            keep={keepNow}
+            onKeptClip={(id, name) => {
+              // The clip's log entries are all in by now (the controller logs before it keeps the clip).
+              const mine = entriesForClip(clipLogs.current, name);
+              clipLogs.current = clipLogs.current.filter((e) => !mine.includes(e));
+              writeSession(id, debugPackage({ ...deviceContext(facing, lastInfo.current), phoneId, consent: settings.consent }, mine, [name]));
+              markReady(id);
               setKept(keptSummary());
+              startUploading(phoneId);
             }}
           />
         )}
@@ -492,24 +512,11 @@ function Main() {
             </Pressable>
           )}
           <Text style={s.hint}>
-            {keep ? "From the next Start, each measured jump's video, pose and motion data stay on the phone. " : ""}
-            Kept: {kept.files} file{kept.files === 1 ? "" : "s"} in {kept.sessions} session{kept.sessions === 1 ? "" : "s"}, {kept.mb} MB.
+            {keep ? "From the next Start, each measured jump's video, pose and motion data are sent in the background. " : ""}
+            {kept.sessions === 0 ? "Nothing waiting to be sent." : `Waiting to be sent: ${kept.sessions} jump${kept.sessions === 1 ? "" : "s"}, ${kept.mb} MB.`}
           </Text>
           {kept.files > 0 && (
             <>
-              <Pressable
-                style={s.wide}
-                disabled={sendStatus.startsWith("Sending")}
-                onPress={() => {
-                  setSendStatus("Sending…");
-                  sendSessions(DEFAULT_SERVER, phoneId, (done, total) => setSendStatus(`Sending ${done} of ${total}…`))
-                    .then((n) => setSendStatus(`Sent ${n} file${n === 1 ? "" : "s"}; removed from the phone.`))
-                    .catch((e) => setSendStatus(`Couldn't send: ${String((e as Error)?.message ?? e)}`))
-                    .finally(() => setKept(keptSummary()));
-                }}
-              >
-                <Text style={s.wideText}>Send recordings</Text>
-              </Pressable>
               <Pressable
                 style={s.wide}
                 onPress={() => {

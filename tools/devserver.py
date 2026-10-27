@@ -3,7 +3,7 @@
 Usage: python3 tools/devserver.py [--port 8765] [--data ../boing-data]
   GET  /                    page with links to the APKs in <data>/apk/
   GET  /<name>.apk          the APK
-  PUT  /upload?session=S&name=N   saves the body to <data>/uploads/S/N (the app's "Send recordings")
+  PUT  /upload?session=S&name=N   saves the body to <data>/uploads/S/N (the app's background upload)
 """
 import argparse
 import html

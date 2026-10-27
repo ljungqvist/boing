@@ -1,13 +1,15 @@
 import { Directory, File, Paths } from "expo-file-system";
-import { uploadFolder } from "../logic/consent";
+import { startUploads } from "boing-upload";
+import { uniqueId } from "../logic/jumps";
 
 /**
- * Debug sessions: the recorded clips of measured jumps and a session.json (diagnostics with pose and
- * motion data), kept on the phone until they're sent to a server: the public one on Kapsi
- * (server/kapsi/). Kept and sent only with consent (logic/consent.ts).
+ * Debug recordings: each kept clip of measured jumps gets a folder with the clip and a session.json
+ * (diagnostics with pose and motion data), and a `.ready` file once complete. Android's upload
+ * service (modules/boing-upload) sends ready folders to the public server on Kapsi (server/kapsi/)
+ * in the background and deletes them. Kept and sent only with consent (logic/consent.ts).
  */
 
-/** Default server for "Send recordings". */
+/** Default server for the recording uploads. */
 export const DEFAULT_SERVER = "https://ljungqvist.info/boing";
 
 /**
@@ -29,14 +31,25 @@ export function newSessionId(now = new Date()): string {
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}_${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
 }
 
-/** Moves a recorded clip into the session's folder; its file name, or null if that failed. */
-export function keepClip(path: string, id: string): string | null {
+/** Moves a recorded clip into a new folder of its own; the folder id and the file name, or null if that failed. */
+export function keepClip(path: string): { id: string; name: string } | null {
   try {
     const f = new File(path.startsWith("file://") ? path : `file://${path}`);
+    const id = uniqueId(newSessionId(), (x) => new Directory(root(), x).exists);
     f.moveSync(sessionDir(id));
-    return f.name;
+    return { id, name: f.name };
   } catch {
     return null;
+  }
+}
+
+/** Marks the folder complete: the upload service takes it from here. */
+export function markReady(id: string): void {
+  try {
+    const f = new File(sessionDir(id), ".ready");
+    if (!f.exists) f.create();
+  } catch {
+    // Debug data only; the folder is marked at the next start.
   }
 }
 
@@ -55,43 +68,27 @@ export function writeSession(id: string, json: string): void {
 const sessions = (): Directory[] =>
   root().exists ? (root().list().filter((x) => x instanceof Directory) as Directory[]) : [];
 
-/** Kept sessions on the phone: count and size in MB. */
+const visible = (d: Directory): File[] => d.list().filter((x) => x instanceof File && !x.name.startsWith(".")) as File[];
+
+/** Recordings waiting on the phone: jumps, files and size in MB. */
 export function keptSummary(): { sessions: number; files: number; mb: number } {
   let files = 0, bytes = 0;
-  for (const d of sessions()) for (const f of d.list()) if (f instanceof File) { files++; bytes += f.size ?? 0; }
+  for (const d of sessions()) for (const f of visible(d)) { files++; bytes += f.size ?? 0; }
   return { sessions: sessions().length, files, mb: Math.round(bytes / 1e5) / 10 };
 }
 
 const headers = (): Record<string, string> => (UPLOAD_KEY ? { "X-Boing-Key": UPLOAD_KEY } : {});
 
 /**
- * Uploads every kept session to `server` (PUT <server>/upload?session=…&name=…, the file as body,
- * into the folder `<session>_<phoneId>`), then marks it complete (POST <server>/done?session=…) and
- * deletes it from the phone. Returns the number of files sent.
+ * Wakes the upload service: it sends every ready folder (PUT <server>/upload?session=<id>_<phoneId>
+ * &name=…, then POST <server>/done) and deletes it. Folders that have a session.json but no `.ready`
+ * (kept by an older version, or interrupted) are marked first. Call it while the app is in the
+ * foreground: a clip was kept, or the app started.
  */
-export async function sendSessions(
-  server: string,
-  phoneId: string,
-  onProgress: (done: number, total: number) => void,
-): Promise<number> {
-  const base = server.replace(/\/+$/, "");
-  const all = sessions().map((d) => ({ d, files: d.list().filter((x) => x instanceof File) as File[] }));
-  const total = all.reduce((n, s) => n + s.files.length, 0);
-  let done = 0;
-  onProgress(done, total);
-  for (const { d, files } of all) {
-    const folder = encodeURIComponent(uploadFolder(d.name, phoneId));
-    for (const f of files) {
-      const url = `${base}/upload?session=${folder}&name=${encodeURIComponent(f.name)}`;
-      const r = await f.upload(url, { httpMethod: "PUT", headers: headers() });
-      if (r.status < 200 || r.status >= 300) throw new Error(`${f.name}: HTTP ${r.status} ${r.body.slice(0, 80)}`);
-      onProgress(++done, total);
-    }
-    const r = await fetch(`${base}/done?session=${folder}`, { method: "POST", headers: headers() });
-    if (!r.ok) throw new Error(`done: HTTP ${r.status}`);
-    d.delete();
-  }
-  return done;
+export function startUploading(phoneId: string, server = DEFAULT_SERVER): void {
+  for (const d of sessions()) if (new File(d, "session.json").exists) markReady(d.name);
+  const dir = decodeURIComponent(root().uri.replace(/^file:\/\//, "")).replace(/\/+$/, "");
+  startUploads(dir, server.replace(/\/+$/, ""), phoneId, UPLOAD_KEY);
 }
 
 /** Asks the server to delete everything this phone has sent (POST <server>/erase?phone=…). */
