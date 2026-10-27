@@ -1,9 +1,10 @@
 #!/bin/sh
 # gwb, cron every minute, no AI (works when the Claude usage limit is reached):
 #   1. erase requests on Kapsi (consent withdrawn) → tools/erase.py for each recording ID
-#   2. complete sessions on Kapsi (uploads/<session>/.done) → ~/boing-data/inbox/<session>/, file by
-#      file with a size check, then deleted on Kapsi
-#   3. sessions in the inbox → tools/gwb/triage.sh in the background (the agent)
+#   2. complete sessions on Kapsi (uploads/<session>/.done) → ~/boing-data/uploads/<session>/ verbatim,
+#      file by file with a size check, then deleted on Kapsi
+#   3. uploads/ over $BOING_UPLOADS_MAX_GB (default 200): oldest sessions deleted first, except those
+#      with a `.keep` file. No triage: the owner runs the boing-uploads skill when they want to.
 # Log: ~/boing-data/state/poll.log. Setup: tools/gwb/README.md.
 set -eu
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -11,7 +12,7 @@ DATA=${BOING_DATA:-$HOME/boing-data}
 KAPSI=${BOING_KAPSI:-pl@kapsi.fi}
 K=sites/ljungqvist.info/boing-data
 STATE=$DATA/state
-mkdir -p "$STATE" "$DATA/inbox"
+mkdir -p "$STATE" "$DATA/uploads"
 exec 9>"$STATE/poll.lock"
 flock -n 9 || exit 0
 log() { echo "$(date -Is) $*" >>"$STATE/poll.log"; }
@@ -47,7 +48,7 @@ for s in $(k "cd $K/uploads 2>/dev/null && for d in */.done; do [ -e \"\$d\" ] &
     log "dropped $s (erased recording ID)"
     continue
   fi
-  part=$DATA/inbox/.$s.part
+  part=$DATA/uploads/.$s.part
   mkdir -p "$part"
   ok=1
   k "cd $K/uploads/$s && stat -c '%s %n' -- *" | while read -r size name; do
@@ -56,16 +57,20 @@ for s in $(k "cd $K/uploads 2>/dev/null && for d in */.done; do [ -e \"\$d\" ] &
     [ "$(stat -c %s "$part/$name")" = "$size" ] || { log "size mismatch $s/$name"; exit 1; }
   done || ok=0
   if [ $ok = 1 ] && [ -f "$part/session.json" ]; then
-    rm -rf "$DATA/inbox/$s"
-    mv "$part" "$DATA/inbox/$s"
+    rm -rf "$DATA/uploads/$s"
+    mv "$part" "$DATA/uploads/$s"
     k "rm -rf $K/uploads/$s"
-    log "fetched $s ($(ls "$DATA/inbox/$s" | wc -l) files)"
+    log "fetched $s ($(ls "$DATA/uploads/$s" | wc -l) files)"
   else
     log "fetch of $s failed; retrying next run"
   fi
 done
 
-# 3. Triage (own lock; exits at once when it's running or waiting for the usage limit).
-if ls -d "$DATA"/inbox/[0-9]* >/dev/null 2>&1; then
-  nohup "$REPO/tools/gwb/triage.sh" >>"$STATE/triage.log" 2>&1 &
-fi
+# 3. Size cap on uploads/ (a session with a .keep file is never removed).
+max=$(( ${BOING_UPLOADS_MAX_GB:-200} * 1024 * 1024 ))
+while [ "$(du -sk "$DATA/uploads" | cut -f1)" -gt "$max" ]; do
+  old=$(for d in "$DATA"/uploads/[0-9]*/; do [ -e "${d}.keep" ] || echo "${d%/}"; done | sort | head -1)
+  [ -n "$old" ] || break
+  rm -rf "$old"
+  log "uploads over ${BOING_UPLOADS_MAX_GB:-200} GB: removed oldest ${old##*/}"
+done

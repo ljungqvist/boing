@@ -6,9 +6,10 @@ gwb (Debian, user `pl`, linger on) holds all Boing data in `~/boing-data` (moved
 ```
 phone ──PUT /upload, POST /done──▶ Kapsi (server/kapsi/) ◀──ssh every minute── gwb poll.sh
 phone ──POST /erase──────────────▶ Kapsi: deletes that phone's uploads, logs the request, mails the owner
-gwb poll.sh  (cron, no AI)   erase requests → tools/erase.py; complete sessions → ~/boing-data/inbox/
-gwb triage.sh (claude -p)    inbox → library / kept / discarded (boing-uploads skill, unattended)
-                             usage limit → state/retry-after; report → Remote Control session → phone push
+gwb poll.sh  (cron, no AI)   erase requests → tools/erase.py; complete sessions → ~/boing-data/uploads/
+                             (verbatim; oldest removed beyond 200 GB, sessions with a .keep file stay)
+triage                       manual: the owner runs the boing-uploads skill when they want to. The
+                             unattended tools/gwb/triage.sh (inbox → library) is no longer started.
 ```
 
 - Repo: `~/boing` (branch `dev`), `npm ci` at the root for the TypeScript tools.
