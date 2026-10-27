@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "main": "index.ts",
   "dependencies": {
+    "boing-upload": "file:modules/boing-upload",
     "expo": "~57.0.28",
     "expo-build-properties": "~57.0.22",
     "expo-document-picker": "~57.0.3",

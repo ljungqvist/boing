@@ -28,6 +28,13 @@ describe("consent", () => {
     expect(uploadFolder("2026-10-24_101500", "0123456789ab")).toBe("2026-10-24_101500_0123456789ab");
   });
 
+  it("tells that recordings are sent automatically, also over mobile data", () => {
+    const t = consentText("0123456789ab").join("\n");
+    expect(t).toContain("automatically");
+    expect(t).toContain("mobile data");
+    expect(t).not.toContain("Send recordings");
+  });
+
   it("shows the recording ID and the contact in the text", () => {
     const t = consentText("0123456789ab").join("\n");
     expect(t).toContain("0123456789ab");
