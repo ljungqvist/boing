@@ -45,15 +45,23 @@ End your reply with exactly two lines:
 SUMMARY: <one line under 180 characters, starting with 'Boing: '>
 PUSH: yes   (or PUSH: no when nothing worth the owner's attention happened)"
   out=$(cd "$REPO" && timeout 3600 "$CLAUDE" -p --model sonnet --permission-mode dontAsk \
-    --add-dir "$DATA" \
+    --output-format json --add-dir "$DATA" \
     --allowedTools Read Write Edit Glob Grep \
       'Bash(ffmpeg:*)' 'Bash(ffprobe:*)' 'Bash(ls:*)' 'Bash(mkdir:*)' 'Bash(mv:*)' 'Bash(rm:*)' 'Bash(cp:*)' \
       'Bash(python3 -I tools/library/*)' 'Bash(python3 -I tools/review/*)' 'Bash(npx tsx tools/library/*)' 'Bash(jq:*)' \
-    <<EOF 2>&1
+    'Bash(cat:*)' 'Bash(head:*)' 'Bash(tail:*)' 'Bash(wc:*)' 'Bash(stat:*)' 'Bash(sort:*)' \
+    'Bash(date:*)' 'Bash(du:*)' \
+    <<EOF 2>>"$STATE/triage.log"
 $prompt
 EOF
 )
   rc=$?
+  # --output-format json: keep the raw run, use .result as the report and log every denied tool call.
+  printf '%s\n' "$out" >"$STATE/reports/$s.json"
+  text=$(printf '%s' "$out" | jq -r '.result // empty' 2>/dev/null)
+  denied=$(printf '%s' "$out" | jq -r '.permission_denials[]? | "\(.tool_name): \(.tool_input | tostring)"' 2>/dev/null)
+  [ -n "$denied" ] && printf '%s\n' "$denied" | while IFS= read -r d; do log "denied $s: $d"; done
+  out=${text:-$out}
   printf '%s\n' "$out" >"$STATE/reports/$s.txt"
   if [ $rc -ne 0 ]; then
     if printf '%s' "$out" | grep -qiE 'usage limit|limit reached|hit your limit|rate limit'; then
