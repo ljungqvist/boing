@@ -22,8 +22,8 @@ class BoingUploadModule : Module() {
     }
 
     Function("stop") {
-      val context = appContext.reactContext ?: return@Function
-      context.stopService(Intent(context, UploadService::class.java))
+      appContext.reactContext?.let { it.stopService(Intent(it, UploadService::class.java)) }
+      Unit
     }
   }
 }
