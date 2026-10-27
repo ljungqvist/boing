@@ -214,6 +214,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         onSessionConfigSelected={onConfig}
         onError={onError}
         resizeMode="cover"
+        // The app is portrait only. With the default ("device") a phone lying on the floor reads as
+        // landscape at random: the clips got a ±90° rotation tag and were re-measured sideways.
+        orientationSource="interface"
       />
       {/* The front camera's preview is mirrored. Its analysed frames are too on iOS (VisionCamera
           mirrors the rotated buffers), not on Android, where the skeleton must be flipped. */}
