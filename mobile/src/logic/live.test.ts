@@ -66,8 +66,11 @@ function setup(opts: {
   const pendingAtResult: number[] = [];
   const logs: Record<string, unknown>[] = [];
   let measuring = 0;
+  const paused: boolean[] = [];
+  const statuses = new Set<string>();
   const live = new LiveController(deps, {
-    status: () => {},
+    status: (st) => statuses.add(st.text),
+    paused: (on) => paused.push(on),
     measuring: () => measuring++,
     result: (m) => { results.push(m); pendingAtResult.push(live.pending); },
     log: (e) => logs.push(e),
@@ -84,7 +87,7 @@ function setup(opts: {
     }
     await live.stop();
   }
-  return { live, run, results, clips, analysed, logs, pendingAtResult, measuring: () => measuring };
+  return { live, run, results, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
@@ -192,26 +195,25 @@ describe("LiveController", () => {
     expect(s.results.some((m) => m.approximate)).toBe(false);
   });
 
-  it("starts measuring without waiting for the next recording to start", async () => {
-    // A recorder that takes long to start (CameraX can take a second): the jump's measurement must
-    // not wait for it. Here the clip after the jump starts only once the measurement has begun.
-    const s = setup({ jumps: [{ tTakeoff: 4, height: 0.3 }], duration: 8 });
+  it("measures one jump at a time: no live analysis and no recording until its height is out", async () => {
+    // Measuring takes until 9 s here. The jump at 6.5 s comes while the first is being measured: it
+    // isn't seen (one height at a time, no confusion which jump it belongs to). The one at 11 s is.
+    const s = setup({ jumps: [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 6.5, height: 0.25 }, { tTakeoff: 11, height: 0.22 }] });
     const deps = (s.live as unknown as { deps: LiveDeps }).deps;
-    const start = deps.startClip.bind(deps);
     const analyse = deps.analyzeClip.bind(deps);
-    let began!: () => void;
-    const analysing = new Promise<void>((ok) => (began = ok));
-    let n = 0;
-    deps.startClip = async () => {
-      const k = n++;
-      const c = await start();
-      if (k === 1) await analysing;
-      return c;
+    deps.analyzeClip = async (...a) => {
+      while (s.now() < 9) await Promise.resolve();
+      return analyse(...a);
     };
-    deps.analyzeClip = (...a) => { began(); return analyse(...a); };
     await s.run();
-    expect(n).toBe(2);
-    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(1);
+    const ok = s.results.filter((m) => accepted(m.jump));
+    expect(ok.map((m) => Math.round(m.jump.tOff))).toEqual([4, 11]);
+    expect(ok.every((m) => m.refined && !m.approximate)).toBe(true);
+    expect(ok[1].jump.hFlight).toBeCloseTo(0.22, 1);
+    expect(s.paused).toEqual([true, false, true, false]);
+    expect(s.statuses).toContain("Measuring · not ready");
+    // Nothing recorded while measuring: the next clip starts after it.
+    expect(s.clips[1].start).toBeGreaterThanOrEqual(9);
   });
 
   it("is no longer pending when a result arrives", async () => {

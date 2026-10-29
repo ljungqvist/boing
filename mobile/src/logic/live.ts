@@ -40,6 +40,11 @@ export interface LiveEvents {
   result(m: Measured): void;
   /** Diagnostics for each live jump (refinement details). */
   log?(entry: Record<string, unknown>): void;
+  /**
+   * The live analysis isn't needed for a while (`true`: a jump is being measured; nothing is recorded
+   * meanwhile) or is needed again (`false`: the next recording runs).
+   */
+  paused?(on: boolean): void;
 }
 
 export interface LiveOptions {
@@ -61,8 +66,13 @@ const HISTORY = 20;
 
 interface OpenClip {
   clip: Clip;
-  /** Live time (frame clock) when recording had started: the clip's t = 0, approximately. */
+  /**
+   * Live time (frame clock) when recording had started: the clip's t = 0, approximately. NaN until the
+   * next frame when it started while the live analysis was paused.
+   */
   start: number;
+  /** `Date.now()` when recording had started. */
+  startedAt: number;
   jumps: Jump[];
 }
 
@@ -93,6 +103,11 @@ export class LiveController {
   private readonly seenAt = new Map<Jump, number>();
   /** Jumps waiting for their re-measured height. */
   pending = 0;
+  /**
+   * A jump is being measured: no live analysis and no new recording until its height is out. One jump
+   * at a time, so it's clear which one a height belongs to.
+   */
+  private busy = false;
 
   constructor(private readonly deps: LiveDeps, private readonly events: LiveEvents, opts: LiveOptions = {}) {
     this.record = opts.record ?? true;
@@ -104,6 +119,11 @@ export class LiveController {
   /** Live analysis rate (frames per second over the last second). */
   get fps(): number {
     return this.fpsWindow.length;
+  }
+
+  /** A jump is being measured; the live analysis is paused. */
+  get measuring(): boolean {
+    return this.busy;
   }
 
   /** Whether the latest frame shows the person in the air. */
@@ -119,8 +139,16 @@ export class LiveController {
   push(frame: PoseFrame, size: Size): void {
     if (this.stopped) return;
     const t = frame.t;
-    if (Number.isNaN(this.firstT)) this.firstT = t;
+    // A clip started while paused: its start on the frame clock, from the time since it started.
+    if (this.clip && Number.isNaN(this.clip.start)) this.clip.start = t - (Date.now() - this.clip.startedAt) / 1000;
     this.lastT = t;
+    if (this.busy) {
+      // Only finish the jump's recording (a little after the landing); then measuring starts.
+      const c = this.clip;
+      if (c && c.jumps.length > 0 && t >= Math.max(...c.jumps.map((j) => j.tOn + AFTER + PAD))) void this.rotate();
+      return;
+    }
+    if (Number.isNaN(this.firstT)) this.firstT = t;
     this.history.push(frame);
     while (this.history[0].t < t - HISTORY) this.history.shift();
     this.fpsWindow.push(t);
@@ -171,6 +199,8 @@ export class LiveController {
     }
     this.pending++;
     this.seenAt.set(j, Date.now());
+    this.busy = true;
+    this.events.status({ text: "Measuring · not ready", tone: "idle" });
     this.events.measuring();
     c.jumps.push(j);
   }
@@ -188,7 +218,7 @@ export class LiveController {
         this.deps.deleteClip(await clip.stop(), false);
         return;
       }
-      this.clip = { clip, start: this.lastT, jumps: [] };
+      this.clip = { clip, start: this.busy ? NaN : this.lastT, startedAt: Date.now(), jumps: [] };
     } catch (e) {
       this.retryAt = this.lastT + 5;
       this.events.log?.({ error: `recording: ${String((e as Error)?.message ?? e)}` });
@@ -200,7 +230,8 @@ export class LiveController {
   /**
    * Ends the current clip and starts the next. The old recording is stopped first: cameras
    * record one file at a time (CameraX crashes otherwise). The short gap is right after a
-   * jump's landing or during a quiet stretch.
+   * jump's landing or during a quiet stretch. A clip with a jump is measured first, with the live
+   * analysis paused; the next recording starts after its height is out, then the live analysis resumes.
    */
   private async rotate() {
     const old = this.clip;
@@ -213,8 +244,27 @@ export class LiveController {
     } finally {
       this.starting = false;
     }
-    // Measuring doesn't wait for the next recording to start.
-    await Promise.all([this.stopped ? null : this.startClip(), this.measure(old, path)]);
+    if (old.jumps.length === 0) {
+      await Promise.all([this.stopped ? null : this.startClip(), this.measure(old, path)]);
+      return;
+    }
+    this.events.paused?.(true);
+    try {
+      await this.measure(old, path);
+    } finally {
+      if (!this.stopped) await this.startClip();
+      this.resume();
+    }
+  }
+
+  /** Live analysis from scratch after a measurement (the frames before it are seconds old). */
+  private resume() {
+    this.busy = false;
+    this.tracker.reset();
+    this.history.length = 0;
+    this.fpsWindow = [];
+    this.firstT = NaN;
+    this.events.paused?.(false);
   }
 
   private async stopClip(c: OpenClip): Promise<string | null> {

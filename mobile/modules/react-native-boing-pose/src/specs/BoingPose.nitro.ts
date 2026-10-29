@@ -69,8 +69,8 @@ export interface PoseDetector
   /** "GPU" or "CPU". */
   readonly delegate: string
   /**
-   * Minimum seconds between analysed frames (0: every frame). `detect` returns an empty array for
-   * frames skipped because of it.
+   * Minimum seconds between analysed frames (0: every frame, Infinity: none, i.e. paused). `detect`
+   * returns an empty array for frames skipped because of it.
    */
   minInterval: number
   /**
