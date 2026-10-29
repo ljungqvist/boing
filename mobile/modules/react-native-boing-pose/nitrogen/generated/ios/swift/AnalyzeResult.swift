@@ -18,7 +18,7 @@ public extension AnalyzeResult {
   /**
    * Create a new instance of `AnalyzeResult`.
    */
-  init(width: Double, height: Double, times: [Double], found: [Double], landmarks: [Double], delegate: String) {
+  init(width: Double, height: Double, times: [Double], found: [Double], landmarks: [Double], delegate: String, timing: AnalyzeTiming) {
     self.init(width, height, { () -> bridge.std__vector_double_ in
       var __vector = bridge.create_std__vector_double_(times.count)
       for __item in times {
@@ -37,7 +37,7 @@ public extension AnalyzeResult {
         __vector.push_back(__item)
       }
       return __vector
-    }(), std.string(delegate))
+    }(), std.string(delegate), timing)
   }
 
   @inline(__always)
@@ -68,5 +68,10 @@ public extension AnalyzeResult {
   @inline(__always)
   var delegate: String {
     return String(self.__delegate)
+  }
+  
+  @inline(__always)
+  var timing: AnalyzeTiming {
+    return self.__timing
   }
 }

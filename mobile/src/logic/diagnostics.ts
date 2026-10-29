@@ -36,9 +36,25 @@ function describeCamera(c: unknown): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
-/** One line per live jump: how it was measured, and why re-measuring failed. */
+/**
+ * Where the time went from seeing a jump live to its height: waiting for the recording to end (and
+ * for earlier jumps), loading the pose model, pose inference, and decoding (alongside the inference).
+ */
+function describeTiming(e: Entry): string | null {
+  if (typeof e.totalMs !== "number") return null;
+  const s = (k: string, x: Entry = e) => (typeof x[k] === "number" ? ((x[k] as number) / 1000).toFixed(1) : "–");
+  const parts = [`wait ${s("waitMs")}`];
+  if (e.timing && typeof e.timing === "object") {
+    const t = e.timing as Entry;
+    parts.push(`model ${s("openMs", t)}`, `pose ${s("poseMs", t)}${t.delegate ? ` (${String(t.delegate)})` : ""}`,
+      `decode ${s("decodeMs", t)} alongside, ${num(t, "decoded", 0)} frames`);
+  }
+  return `took ${s("totalMs")} s: ${parts.join(", ")}`;
+}
+
+/** One line per live jump: how it was measured, how long it took, and why re-measuring failed. */
 export function describeLog(e: Entry): string {
-  return [describeJump(e), describeMotion(e.motion), describeCamera(e.camera)].filter(Boolean).join(" · ");
+  return [describeJump(e), describeTiming(e), describeMotion(e.motion), describeCamera(e.camera)].filter(Boolean).join(" · ");
 }
 
 function describeJump(e: Entry): string {

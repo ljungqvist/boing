@@ -89,12 +89,18 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         onInfo(info.current);
         setDetector(det);
         // In the background; until it's there (or if it can't be loaded), re-measure with the live model.
-        modelPath("heavy").then((h) => { if (alive) measureModel.current = h; }, () => {});
+        // Loaded ahead of each jump, so measuring doesn't wait for it.
+        modelPath("heavy").then((h) => {
+          if (!alive) return;
+          measureModel.current = h;
+          boingPose.prepare(toPath(h), true);
+        }, () => {});
       })
       .catch((e) => alive && onError(e));
     return () => {
       alive = false;
       setDetector(null);
+      boingPose.releasePrepared();
       // Let a frame being analysed finish before freeing the model.
       setTimeout(() => det?.close(), 500);
     };
@@ -130,10 +136,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             if (!heavy) throw e;
             // A heavy model that won't load (damaged download): stay with the live model from now on.
             measureModel.current = heavy = null;
+            boingPose.releasePrepared();
             r = await run(model.current!);
           }
           const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
-          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
+          return {
+            frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts,
+            timing: { ...r.timing, delegate: r.delegate },
+          };
         },
         deleteClip(path, hasJumps) {
           const { keep: keepIt, onKeptClip: kept } = debugRef.current;
@@ -155,6 +165,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         measuring: () => eventsRef.current.measuring(),
         result: (m) => eventsRef.current.result(m),
         log: (e) => eventsRef.current.log?.(e),
+        // While a jump is measured, no pose on the camera frames: the phone's power goes to the measurement.
+        paused: (on) => { detector.minInterval = on ? Infinity : 0; },
       },
       // The heavy model takes several seconds per jump on a mid-range phone.
       { timeoutMs: 60_000 },
@@ -174,13 +186,18 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     const { frame, size } = fromDetect(a);
     if (!controller) return;
     controller.push(frame, size);
-    feed.emit({ lm: frame.lm, size, air: controller.airborne });
+    // No skeleton while a jump is measured ("not ready").
+    feed.emit({ lm: controller.measuring ? null : frame.lm, size, air: controller.airborne });
   }, [controller, feed]);
 
   const onFrame = useCallback((frame: Frame) => {
     "worklet";
     try {
-      if (detector) scheduleOnRN(onPose, detector.detect(frame));
+      if (detector) {
+        const a = detector.detect(frame);
+        // Empty: skipped (live analysis paused while measuring).
+        if (a.length > 0) scheduleOnRN(onPose, a);
+      }
     } finally {
       frame.dispose();
     }

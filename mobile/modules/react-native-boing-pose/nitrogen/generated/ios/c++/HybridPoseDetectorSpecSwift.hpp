@@ -70,6 +70,12 @@ namespace margelo::nitro::boingpose {
       auto __result = _swiftPart.getDelegate();
       return __result;
     }
+    inline double getMinInterval() noexcept override {
+      return _swiftPart.getMinInterval();
+    }
+    inline void setMinInterval(double minInterval) noexcept override {
+      _swiftPart.setMinInterval(std::forward<decltype(minInterval)>(minInterval));
+    }
 
   public:
     // Methods

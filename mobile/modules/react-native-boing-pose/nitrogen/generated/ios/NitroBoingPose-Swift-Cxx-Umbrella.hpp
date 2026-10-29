@@ -12,6 +12,8 @@
 namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 // Forward declaration of `AnalyzeResult` to properly resolve imports.
 namespace margelo::nitro::boingpose { struct AnalyzeResult; }
+// Forward declaration of `AnalyzeTiming` to properly resolve imports.
+namespace margelo::nitro::boingpose { struct AnalyzeTiming; }
 // Forward declaration of `HybridBoingPoseSpec` to properly resolve imports.
 namespace margelo::nitro::boingpose { class HybridBoingPoseSpec; }
 // Forward declaration of `HybridFrameSpec` to properly resolve imports.
@@ -24,6 +26,7 @@ namespace margelo::nitro::boingpose { struct VideoInfo; }
 // Include C++ defined types
 #include "AnalyzeOptions.hpp"
 #include "AnalyzeResult.hpp"
+#include "AnalyzeTiming.hpp"
 #include "HybridBoingPoseSpec.hpp"
 #include "HybridPoseDetectorSpec.hpp"
 #include "VideoInfo.hpp"

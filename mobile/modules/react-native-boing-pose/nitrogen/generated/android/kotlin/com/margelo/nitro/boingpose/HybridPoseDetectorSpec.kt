@@ -30,6 +30,12 @@ abstract class HybridPoseDetectorSpec: HybridObject() {
   @get:DoNotStrip
   @get:Keep
   abstract val delegate: String
+  
+  @get:DoNotStrip
+  @get:Keep
+  @set:DoNotStrip
+  @set:Keep
+  abstract var minInterval: Double
 
   // Methods
   @DoNotStrip

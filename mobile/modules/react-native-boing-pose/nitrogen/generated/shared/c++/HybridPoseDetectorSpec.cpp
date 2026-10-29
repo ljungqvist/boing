@@ -15,6 +15,8 @@ namespace margelo::nitro::boingpose {
     // load custom methods/properties
     registerHybrids(this, [](Prototype& prototype) {
       prototype.registerHybridGetter("delegate", &HybridPoseDetectorSpec::getDelegate);
+      prototype.registerHybridGetter("minInterval", &HybridPoseDetectorSpec::getMinInterval);
+      prototype.registerHybridSetter("minInterval", &HybridPoseDetectorSpec::setMinInterval);
       prototype.registerHybridMethod("detect", &HybridPoseDetectorSpec::detect);
       prototype.registerHybridMethod("close", &HybridPoseDetectorSpec::close);
     });

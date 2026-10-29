@@ -42,7 +42,7 @@ function setup(opts: {
       const frames: PoseFrame[] = scene.frames
         .filter((f) => f.t - start >= from && f.t - start <= to)
         .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: drifted(f, takeoff) }));
-      return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 } };
+      return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 }, timing: { poseMs: 900, delegate: "GPU" } };
     },
     deleteClip(path, hasJumps) {
       const c = clips.find((x) => `clip@${x.start}` === path);
@@ -66,8 +66,11 @@ function setup(opts: {
   const pendingAtResult: number[] = [];
   const logs: Record<string, unknown>[] = [];
   let measuring = 0;
+  const paused: boolean[] = [];
+  const statuses = new Set<string>();
   const live = new LiveController(deps, {
-    status: () => {},
+    status: (st) => statuses.add(st.text),
+    paused: (on) => paused.push(on),
     measuring: () => measuring++,
     result: (m) => { results.push(m); pendingAtResult.push(live.pending); },
     log: (e) => logs.push(e),
@@ -84,7 +87,7 @@ function setup(opts: {
     }
     await live.stop();
   }
-  return { live, run, results, clips, analysed, logs, pendingAtResult, measuring: () => measuring };
+  return { live, run, results, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
@@ -106,6 +109,9 @@ describe("LiveController", () => {
     expect(measured.every((e) => (e.motion as { tiltDeg: number }).tiltDeg === 30 && typeof e.clip === "string")).toBe(true);
     // And the camera's exposure (motion blur of the feet).
     expect(measured.every((e) => (e.camera as { exposureS: number }).exposureS === 0.01)).toBe(true);
+    // And where the time went: waiting for the recording, then analysing it.
+    expect(measured.every((e) => (e.timing as { delegate: string }).delegate === "GPU")).toBe(true);
+    expect(measured.every((e) => typeof e.waitMs === "number" && (e.totalMs as number) >= (e.waitMs as number))).toBe(true);
     expect(s.clips.filter((c) => c.hasJumps)).toHaveLength(2);
     // Every clip is stopped and deleted in the end.
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
@@ -187,6 +193,27 @@ describe("LiveController", () => {
     expect(s.results).toHaveLength(2);
     expect(s.results.every((m) => m.refined && !accepted(m.jump) && m.jump.flags.includes("inconsistent"))).toBe(true);
     expect(s.results.some((m) => m.approximate)).toBe(false);
+  });
+
+  it("measures one jump at a time: no live analysis and no recording until its height is out", async () => {
+    // Measuring takes until 9 s here. The jump at 6.5 s comes while the first is being measured: it
+    // isn't seen (one height at a time, no confusion which jump it belongs to). The one at 11 s is.
+    const s = setup({ jumps: [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 6.5, height: 0.25 }, { tTakeoff: 11, height: 0.22 }] });
+    const deps = (s.live as unknown as { deps: LiveDeps }).deps;
+    const analyse = deps.analyzeClip.bind(deps);
+    deps.analyzeClip = async (...a) => {
+      while (s.now() < 9) await Promise.resolve();
+      return analyse(...a);
+    };
+    await s.run();
+    const ok = s.results.filter((m) => accepted(m.jump));
+    expect(ok.map((m) => Math.round(m.jump.tOff))).toEqual([4, 11]);
+    expect(ok.every((m) => m.refined && !m.approximate)).toBe(true);
+    expect(ok[1].jump.hFlight).toBeCloseTo(0.22, 1);
+    expect(s.paused).toEqual([true, false, true, false]);
+    expect(s.statuses).toContain("Measuring · not ready");
+    // Nothing recorded while measuring: the next clip starts after it.
+    expect(s.clips[1].start).toBeGreaterThanOrEqual(9);
   });
 
   it("is no longer pending when a result arrives", async () => {
