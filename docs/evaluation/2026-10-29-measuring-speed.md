@@ -101,11 +101,29 @@ first, as decided on 2026-10-21.
 
 ## Results from the phone (2026-10-29)
 
-Analysed on gwb on 2026-10-30. **The session recorded on 2026-10-29 never arrived.** The server got no
-upload request after 2026-10-27, and nothing was waiting on it or on gwb. So no build 36 jump (one with
-`totalMs`, `waitMs`, `timing`) has been seen yet. Below are the old build's numbers as the baseline,
-plus the library run. The build 36 questions (where the time goes now, whether heights shifted, one jump
-at a time) stay open until a session from it is sent ("Send recordings").
+Analysed on gwb on 2026-10-30. The earlier jumps of the evening were not kept (recordings were off);
+four jumps of the new build were sent afterwards, one per upload (front camera, 60 fps, GPU).
+
+### New build: ≈ 5.6 s from jump seen to height (was ≈ 15 s of analysis alone)
+
+| per jump (4 jumps) | median | range |
+|---|---|---|
+| `totalMs` (jump seen → height) | 5.62 s | 5.58–5.75 s |
+| `waitMs` (jump seen → measuring starts) | 0.10 s | 0.09–0.12 s |
+| `openMs` (model) | 0.0 s | prepared every time |
+| `poseMs` | 4.9 s | 4.80–5.01 s for 144–147 frames: **33–34 ms per frame** |
+| `decodeMs` (alongside) | 3.8 s | 3.55–3.96 s for 173–198 decoded frames (from the key frame), < `poseMs` |
+
+The old build needed ≈ 100 ms per frame all in, the new one 38 ms (pose 33 ms of it). The pose model is
+now ≈ 87 % of the time; waiting, loading and decoding are nearly gone. On top of the 5.6 s come the
+0.8 s after landing before the live tracker reports the jump.
+
+**Heights unchanged.** Takeoff and landing marked by eye on the clips (foot crops, ±1 frame), height from
+the flight time, against the app: −0.9, +1.2, −0.6, −1.1 cm (the 4th −2.8 cm if the landing is one frame
+earlier). Mean −0.4 cm, the same as the app-clip library set (−0.4 ± 0.9 cm). fps 60.0, 24–35 frames in
+the air, g 8.3–10.5, offsets −0.14 … −0.22 s, all 4 accepted (flags `disagree` 2×, `toe-plateau` +
+`camera-moved` 1×). One jump at a time held: one jump per upload, each measured within 0.1 s of being
+seen.
 
 ### Old build: where the time went (all uploads 2026-10-19 … 10-27)
 
@@ -189,11 +207,12 @@ it gives the same result as the 0.7 / 0.5 s column.
 
 ### Next step
 
-1. **Send a build 36/37 session.** Everything about the new timing waits for it. If `pose` is still
-   ≈ 100 ms per frame on the GPU, try the heavy model on the CPU (XNNPACK). If `wait` dominates, look at
-   the clip stop.
-2. **Don't re-measure live "jumps" that can't be jumps** (over ≈ 1 s in the air, i.e. heights of
-   metres). Each costs tens of seconds of a blocked app and ends in a `no-match`.
+1. **CPU vs GPU for the pose model** (it is ≈ 87 % of the time now, 33 ms per frame on the GPU): a menu
+   switch "Re-measure jumps on: GPU / CPU" (branch `claude/remeasure-cpu-option`) to compare on the
+   phone, same jumps' `poseMs` per frame.
+2. **Don't re-measure live "jumps" that can't be jumps** (over 1 s in the air, i.e. heights of
+   metres). Each costs tens of seconds of a blocked app and ends in a `no-match`. Done on the same
+   branch.
 3. **Find the takeoff bias** (live vs recording clock) before touching the window. After that, `PAD`
    0.1 s (0.9 / 0.7 s, ≈ 16 % fewer frames) is the step the library supports. The price is jumps like
    the `camera-moved` one above. It saves fewer frames than a faster pose per frame could, so it comes
