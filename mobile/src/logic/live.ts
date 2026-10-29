@@ -18,10 +18,12 @@ export interface LiveDeps {
   /** Starts recording the camera. Resolves once recording has started. */
   startClip(): Promise<Clip>;
   /**
-   * Pose of every recorded frame between `from` and `to` (seconds from the clip's start), and
-   * facts about the recorded file (size, rotation, frame rate) for the diagnostics.
+   * Pose of every recorded frame between `from` and `to` (seconds from the clip's start), and for
+   * the diagnostics: facts about the recorded file (size, rotation, frame rate) and where the time went.
    */
-  analyzeClip(path: string, from: number, to: number): Promise<{ frames: PoseFrame[]; size: Size; video?: Record<string, unknown> }>;
+  analyzeClip(path: string, from: number, to: number): Promise<{
+    frames: PoseFrame[]; size: Size; video?: Record<string, unknown>; timing?: Record<string, unknown>;
+  }>;
   /** Deletes a finished clip (`hasJumps`: it was measured; a debug setting may keep those). */
   deleteClip(path: string, hasJumps?: boolean): void;
   /** Motion-sensor samples between two times on the frame clock, if the phone's sensors are read. */
@@ -38,6 +40,11 @@ export interface LiveEvents {
   result(m: Measured): void;
   /** Diagnostics for each live jump (refinement details). */
   log?(entry: Record<string, unknown>): void;
+  /**
+   * The live analysis isn't needed for a while (`true`: a jump is being measured; nothing is recorded
+   * meanwhile) or is needed again (`false`: the next recording runs).
+   */
+  paused?(on: boolean): void;
 }
 
 export interface LiveOptions {
@@ -59,8 +66,13 @@ const HISTORY = 20;
 
 interface OpenClip {
   clip: Clip;
-  /** Live time (frame clock) when recording had started: the clip's t = 0, approximately. */
+  /**
+   * Live time (frame clock) when recording had started: the clip's t = 0, approximately. NaN until the
+   * next frame when it started while the live analysis was paused.
+   */
   start: number;
+  /** `Date.now()` when recording had started. */
+  startedAt: number;
   jumps: Jump[];
 }
 
@@ -87,8 +99,15 @@ export class LiveController {
   private readonly rotateSeconds: number;
   private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
+  /** When each jump waiting for its re-measured height was seen (`Date.now()`). */
+  private readonly seenAt = new Map<Jump, number>();
   /** Jumps waiting for their re-measured height. */
   pending = 0;
+  /**
+   * A jump is being measured: no live analysis and no new recording until its height is out. One jump
+   * at a time, so it's clear which one a height belongs to.
+   */
+  private busy = false;
 
   constructor(private readonly deps: LiveDeps, private readonly events: LiveEvents, opts: LiveOptions = {}) {
     this.record = opts.record ?? true;
@@ -100,6 +119,11 @@ export class LiveController {
   /** Live analysis rate (frames per second over the last second). */
   get fps(): number {
     return this.fpsWindow.length;
+  }
+
+  /** A jump is being measured; the live analysis is paused. */
+  get measuring(): boolean {
+    return this.busy;
   }
 
   /** Whether the latest frame shows the person in the air. */
@@ -115,8 +139,16 @@ export class LiveController {
   push(frame: PoseFrame, size: Size): void {
     if (this.stopped) return;
     const t = frame.t;
-    if (Number.isNaN(this.firstT)) this.firstT = t;
+    // A clip started while paused: its start on the frame clock, from the time since it started.
+    if (this.clip && Number.isNaN(this.clip.start)) this.clip.start = t - (Date.now() - this.clip.startedAt) / 1000;
     this.lastT = t;
+    if (this.busy) {
+      // Only finish the jump's recording (a little after the landing); then measuring starts.
+      const c = this.clip;
+      if (c && c.jumps.length > 0 && t >= Math.max(...c.jumps.map((j) => j.tOn + AFTER + PAD))) void this.rotate();
+      return;
+    }
+    if (Number.isNaN(this.firstT)) this.firstT = t;
     this.history.push(frame);
     while (this.history[0].t < t - HISTORY) this.history.shift();
     this.fpsWindow.push(t);
@@ -166,6 +198,9 @@ export class LiveController {
       return;
     }
     this.pending++;
+    this.seenAt.set(j, Date.now());
+    this.busy = true;
+    this.events.status({ text: "Measuring · not ready", tone: "idle" });
     this.events.measuring();
     c.jumps.push(j);
   }
@@ -183,7 +218,7 @@ export class LiveController {
         this.deps.deleteClip(await clip.stop(), false);
         return;
       }
-      this.clip = { clip, start: this.lastT, jumps: [] };
+      this.clip = { clip, start: this.busy ? NaN : this.lastT, startedAt: Date.now(), jumps: [] };
     } catch (e) {
       this.retryAt = this.lastT + 5;
       this.events.log?.({ error: `recording: ${String((e as Error)?.message ?? e)}` });
@@ -195,7 +230,8 @@ export class LiveController {
   /**
    * Ends the current clip and starts the next. The old recording is stopped first: cameras
    * record one file at a time (CameraX crashes otherwise). The short gap is right after a
-   * jump's landing or during a quiet stretch.
+   * jump's landing or during a quiet stretch. A clip with a jump is measured first, with the live
+   * analysis paused; the next recording starts after its height is out, then the live analysis resumes.
    */
   private async rotate() {
     const old = this.clip;
@@ -208,8 +244,27 @@ export class LiveController {
     } finally {
       this.starting = false;
     }
-    if (!this.stopped) await this.startClip();
-    await this.measure(old, path);
+    if (old.jumps.length === 0) {
+      await Promise.all([this.stopped ? null : this.startClip(), this.measure(old, path)]);
+      return;
+    }
+    this.events.paused?.(true);
+    try {
+      await this.measure(old, path);
+    } finally {
+      if (!this.stopped) await this.startClip();
+      this.resume();
+    }
+  }
+
+  /** Live analysis from scratch after a measurement (the frames before it are seconds old). */
+  private resume() {
+    this.busy = false;
+    this.tracker.reset();
+    this.history.length = 0;
+    this.fpsWindow = [];
+    this.firstT = NaN;
+    this.events.paused?.(false);
   }
 
   private async stopClip(c: OpenClip): Promise<string | null> {
@@ -228,6 +283,10 @@ export class LiveController {
       try {
         for (const j of c.jumps) {
           const { measured, log } = await this.refine(j, c, path);
+          const seen = this.seenAt.get(j);
+          this.seenAt.delete(j);
+          // From the moment the jump was seen live until its height is ready.
+          if (seen !== undefined) log.totalMs = Date.now() - seen;
           // Not pending any more when the result arrives (the app clears "Measuring…" at zero).
           this.pending--;
           done++;
@@ -237,6 +296,7 @@ export class LiveController {
       } finally {
         // Even if a result handler throws: nothing stays pending, the clip is deleted.
         this.pending -= c.jumps.length - done;
+        for (const j of c.jumps) this.seenAt.delete(j);
         if (path) this.deps.deleteClip(path, c.jumps.length > 0);
       }
     });
@@ -272,6 +332,9 @@ export class LiveController {
       return fallback();
     }
     const t0 = Date.now();
+    const seen = this.seenAt.get(live);
+    // Waiting for the end of the recording (and for earlier jumps) before measuring could start.
+    if (seen !== undefined) log.waitMs = t0 - seen;
     try {
       const from = Math.max(0, live.tOff - BEFORE - PAD - c.start);
       const to = live.tOn + AFTER + PAD - c.start;
@@ -281,7 +344,7 @@ export class LiveController {
       Object.assign(size, r.size);
       const frames = r.frames.map((f) => ({ t: f.t + c.start, lm: f.lm }));
       const fps = frameRate(frames);
-      Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video });
+      Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video, timing: r.timing });
       // For offline analysis (shared separately, see poseReport).
       log.pose = compactPose(frames, r.size);
       const found = jumpsIn(frames, r.size);

@@ -18,6 +18,8 @@ namespace margelo::nitro::boingpose { class HybridPoseDetectorSpec; }
 namespace margelo::nitro::boingpose { struct VideoInfo; }
 // Forward declaration of `AnalyzeResult` to properly resolve imports.
 namespace margelo::nitro::boingpose { struct AnalyzeResult; }
+// Forward declaration of `AnalyzeTiming` to properly resolve imports.
+namespace margelo::nitro::boingpose { struct AnalyzeTiming; }
 // Forward declaration of `AnalyzeOptions` to properly resolve imports.
 namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 
@@ -28,6 +30,7 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include "AnalyzeResult.hpp"
 #include <NitroModules/Promise.hpp>
 #include <vector>
+#include "AnalyzeTiming.hpp"
 #include "AnalyzeOptions.hpp"
 #include <functional>
 
@@ -88,6 +91,18 @@ namespace margelo::nitro::boingpose {
       }
       auto __value = std::move(__result.value());
       return __value;
+    }
+    inline void prepare(const std::string& modelPath, bool preferGpu) override {
+      auto __result = _swiftPart.prepare(modelPath, std::forward<decltype(preferGpu)>(preferGpu));
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
+    inline void releasePrepared() override {
+      auto __result = _swiftPart.releasePrepared();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
     }
     inline VideoInfo videoInfo(const std::string& path) override {
       auto __result = _swiftPart.videoInfo(path);

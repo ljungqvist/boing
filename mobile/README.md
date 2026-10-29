@@ -10,6 +10,19 @@ Design: `../docs/superpowers/specs/2026-10-14-react-native-app-design.md`.
   `modules/react-native-boing-pose` (live frames and video files)
 - Analysis: the web app's `../src/analysis` (shared, unchanged)
 
+## Live mode
+
+The camera records in clips while the full model follows you live. When a jump is seen, the live
+analysis pauses (no skeleton, "Measuring · not ready"), the clip ends 0.9 s after landing, and the jump is
+measured again from every recorded frame with the heavy model (loaded ahead of time). Nothing is
+recorded meanwhile, so a jump made while measuring isn't seen: one height at a time. After the height
+is out, the next clip starts and the skeleton comes back (green: ready).
+
+Each measured jump's diagnostics line says where the time went (menu → Diagnostics), e.g.
+`took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU), decode 1.8 alongside, 192 frames`: waiting for the
+clip to end, loading the model, the pose model on all frames, and decoding (overlapped with the pose
+model). Background: `../docs/evaluation/2026-10-29-measuring-speed.md`.
+
 ## Build and run (Android)
 
 Needs JDK 17 and the Android SDK (`brew install openjdk@17 && brew install --cask android-commandlinetools`;
