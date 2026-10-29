@@ -44,12 +44,6 @@ interface Props {
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
-/**
- * While a jump is measured from the recording, the live analysis runs at ≤ 40 fps (every other frame
- * at 60 fps), leaving the processor to the measurement. 30 fps still finds every jump; the heights
- * come from the recording anyway.
- */
-const MEASURING_INTERVAL = 1 / 40;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
 export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip }: Props) {
@@ -116,8 +110,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   // The controller: live tracking, recording in clips, re-measuring each jump.
   const controller = useMemo(() => {
     if (!detector) return null;
-    const pace = () => { detector.minInterval = c.pending > 0 ? MEASURING_INTERVAL : 0; };
-    const c: LiveController = new LiveController(
+    return new LiveController(
       {
         async startClip() {
           const recorder = await videoOutput.createRecorder({});
@@ -169,20 +162,15 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       },
       {
         status: (s) => eventsRef.current.status(s),
-        measuring: () => {
-          pace();
-          eventsRef.current.measuring();
-        },
-        result: (m) => {
-          pace();
-          eventsRef.current.result(m);
-        },
+        measuring: () => eventsRef.current.measuring(),
+        result: (m) => eventsRef.current.result(m),
         log: (e) => eventsRef.current.log?.(e),
+        // While a jump is measured, no pose on the camera frames: the phone's power goes to the measurement.
+        paused: (on) => { detector.minInterval = on ? Infinity : 0; },
       },
       // The heavy model takes several seconds per jump on a mid-range phone.
       { timeoutMs: 60_000 },
     );
-    return c;
   }, [detector, videoOutput, acc, gyro, maxFps]);
 
   useEffect(() => {
@@ -198,7 +186,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     const { frame, size } = fromDetect(a);
     if (!controller) return;
     controller.push(frame, size);
-    feed.emit({ lm: frame.lm, size, air: controller.airborne });
+    // No skeleton while a jump is measured ("not ready").
+    feed.emit({ lm: controller.measuring ? null : frame.lm, size, air: controller.airborne });
   }, [controller, feed]);
 
   const onFrame = useCallback((frame: Frame) => {
@@ -206,7 +195,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     try {
       if (detector) {
         const a = detector.detect(frame);
-        // Empty: skipped (live analysis paced down while measuring).
+        // Empty: skipped (live analysis paused while measuring).
         if (a.length > 0) scheduleOnRN(onPose, a);
       }
     } finally {

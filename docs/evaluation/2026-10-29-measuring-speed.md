@@ -21,7 +21,7 @@ where the time actually goes.
 | decode from the key frame before the window (≤ 1 s of video, hardware decoder) | `decodeFrames` | small |
 | **per frame: YUV → RGB in Kotlin, one `ByteBuffer.get` per byte**, then a separate rotation pass | `toBitmapScaled`, `rotated` | ≈ 10–30 ms × ≈ 150 frames |
 | per frame: heavy pose model, **one after the other with decoding** (no overlap) | `detect` | ≈ 30–100 ms × ≈ 150 frames |
-| meanwhile the live analysis keeps running the full model on **every camera frame (60 fps)** on the same GPU/CPU | `HybridPoseDetector` | slows the measurement down |
+| meanwhile the live analysis keeps running the full model on **every camera frame (60 fps)** on the same GPU/CPU, and the camera keeps recording | `HybridPoseDetector` | slows the measurement down |
 
 The window is 1.1 s before takeoff to 0.9 s after landing: ≈ 2.5 s, i.e. ≈ 150 frames at 60 fps
 (the S24+ records at 60). 20 s means ≈ 120 ms per frame all in, several times what the heavy model
@@ -29,8 +29,13 @@ alone should need on that phone, so most of the time is likely around the model,
 
 ## Changed (results unchanged)
 
-1. **Measuring starts as soon as the recording has stopped**, while the next recording starts
-   (`LiveController.rotate`; unit test with a slow-starting recorder).
+1. **One jump at a time** (user's decision, 2026-10-29). Once a jump is seen, the live analysis stops:
+   no skeleton, status "Measuring · not ready", no pose on the camera frames, and no new recording.
+   The jump's clip ends 0.9 s after landing as before and is measured right away. After the height is
+   out, the next recording starts, the live analysis resumes from scratch, and the status turns green.
+   A jump made while measuring isn't seen at all (before, it was queued and read out afterwards, which
+   made it unclear which jump a height belonged to). The camera preview stays on: the phone draws it
+   without the app's involvement. `LiveController` (`busy`, `paused` event), unit test.
 2. **The heavy model is loaded ahead of time** (`boingPose.prepare`, from `LiveCamera` once it's
    downloaded). Each jump still gets a fresh landmarker, as before (no tracking state from the last jump);
    the next one loads in the background after each measurement. `releasePrepared` when the camera stops.
@@ -39,9 +44,8 @@ alone should need on that phone, so most of the time is likely around the model,
    convert-then-rotate for all four rotations).
 4. **Decoding runs on its own thread, up to 3 frames ahead** (`FrameReader`), so decoding and converting
    overlap with the pose inference. Same frames, same order.
-5. **The live analysis runs at ≤ 40 fps while a jump is being measured** (every other frame at 60 fps;
-   30 fps cameras unchanged), leaving the GPU/CPU to the measurement. The live analysis only finds
-   jumps; heights come from the recording. `PoseDetector.minInterval`.
+5. While a jump is measured the live pose model doesn't run at all (`PoseDetector.minInterval` =
+   Infinity), leaving the GPU and CPU to the measurement.
 6. The clip's rotation and duration come from the metadata instead of a pass over all samples.
 
 **Diagnostics:** every re-measured jump now logs and shows where the time went:
