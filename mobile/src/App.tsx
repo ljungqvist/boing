@@ -161,7 +161,8 @@ function Main() {
     setDetails(null);
   }, []);
 
-  const addResult = useCallback((m: Measured, live: boolean) => {
+  /** Shows (and for live jumps announces) a result; resolves once it has been said. */
+  const addResult = useCallback((m: Measured, live: boolean): Promise<void> => {
     const j = m.jump;
     if (!accepted(j)) {
       const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
@@ -171,16 +172,17 @@ function Main() {
         const feedback = discardFeedback({ refined: m.refined, pending: controller.current?.pending ?? 0 });
         if (feedback === "failure") {
           showFlash({ text: "Couldn't measure", measuring: false, failed: true });
-          announceFailure(soundRef.current);
+          return announceFailure(soundRef.current);
         } else if (feedback === "clear-measuring") setFlash((f) => (f?.measuring ? null : f));
       }
-      return;
+      return Promise.resolve();
     }
     setResults((xs) => [...xs, m]);
     if (live) {
       showFlash({ text: `${m.approximate ? "≈" : ""}${cm(j.hPrimary)}`, measuring: false });
-      announce(j.hPrimary, soundRef.current);
+      return announce(j.hPrimary, soundRef.current);
     }
+    return Promise.resolve();
   }, [showFlash]);
 
   const events: LiveEvents = {
@@ -188,7 +190,8 @@ function Main() {
     measuring: () => showFlash({ text: "Measuring…", measuring: true }),
     result: (m) => {
       console.log(`BOING_LIVE ${JSON.stringify({ h: m.jump.hPrimary, hFlight: m.jump.hFlight, fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags })}`);
-      addResult(m, true);
+      // The live analysis resumes once this has been said (see LiveController).
+      return addResult(m, true);
     },
     log: (e) => {
       if (keepNow) clipLogs.current.push(e);
@@ -255,7 +258,7 @@ function Main() {
           fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags,
         })),
       });
-      for (const m of r.jumps) addResult(m, false);
+      for (const m of r.jumps) void addResult(m, false);
       const ok = r.jumps.filter((m) => accepted(m.jump));
       const how = r.timeScale < 1 ? ` · slow motion, captured at ${Math.round(v.captureFps)} fps` : ` · ${Math.round(r.fps)} fps`;
       setStatus({ text: `${ok.length} jump${ok.length === 1 ? "" : "s"} found${how}`, tone: ok.length ? "ready" : "idle" });
@@ -442,6 +445,7 @@ function Main() {
       )}
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
+          <Row label="Build" value={BUILD} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
@@ -657,12 +661,18 @@ const s = StyleSheet.create({
   trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
 });
 
+/** CI build number, commit and branch (app.config.js, android.yml); "local" for other builds. */
+const BUILD = process.env.EXPO_PUBLIC_BOING_BUILD
+  ? `${process.env.EXPO_PUBLIC_BOING_BUILD} (${process.env.EXPO_PUBLIC_BOING_COMMIT ?? "?"}, ${process.env.EXPO_PUBLIC_BOING_BRANCH ?? "?"})`
+  : "local";
+
 /** Phone, camera and time, at the top of diagnostics and debug packages. */
 function deviceContext(facing: string, info: CameraInfo | null): Record<string, unknown> {
   const c = Platform.constants as Record<string, unknown>;
   // Android: brand and model; iOS only tells phone or tablet ("pad").
   const device = [c.Brand, c.Model].filter(Boolean).join(" ") || [Platform.OS, c.interfaceIdiom].filter(Boolean).join(" ");
   return {
+    build: BUILD,
     time: new Date().toISOString(),
     device: `${device} (${Platform.OS} ${c.Release ?? Platform.Version})`,
     camera: facing,
