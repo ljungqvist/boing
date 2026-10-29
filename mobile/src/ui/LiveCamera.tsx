@@ -40,13 +40,15 @@ interface Props {
   keep: boolean;
   /** A clip was kept: its folder id and file name. */
   onKeptClip?: (id: string, name: string) => void;
+  /** Re-measure on the CPU instead of the GPU (debug setting, to compare the speed). */
+  measureOnCpu?: boolean;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -93,7 +95,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         modelPath("heavy").then((h) => {
           if (!alive) return;
           measureModel.current = h;
-          boingPose.prepare(toPath(h), true);
+          boingPose.prepare(toPath(h), !measureOnCpu);
         }, () => {});
       })
       .catch((e) => alive && onError(e));
@@ -127,7 +129,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         },
         async analyzeClip(path, from, to) {
           const run = (m: string) =>
-            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: true }, () => {});
+            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu }, () => {});
           let heavy = measureModel.current;
           let r;
           try {

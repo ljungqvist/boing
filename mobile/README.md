@@ -21,7 +21,9 @@ is out, the next clip starts and the skeleton comes back (green: ready).
 Each measured jump's diagnostics line says where the time went (menu → Diagnostics), e.g.
 `took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU), decode 1.8 alongside, 192 frames`: waiting for the
 clip to end, loading the model, the pose model on all frames, and decoding (overlapped with the pose
-model). Background: `../docs/evaluation/2026-10-29-measuring-speed.md`.
+model). Background: `../docs/evaluation/2026-10-29-measuring-speed.md`. To compare, menu →
+"Re-measure jumps on: GPU / CPU" (from the next Start). A live "jump" over 1 s in the air isn't
+re-measured (a false alarm, not a jump).
 
 ## Build and run (Android)
 
