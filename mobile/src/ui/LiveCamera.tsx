@@ -42,13 +42,15 @@ interface Props {
   onKeptClip?: (id: string, name: string) => void;
   /** Re-measure on the CPU instead of the GPU (debug setting, to compare the speed). */
   measureOnCpu?: boolean;
+  /** Re-measure a shorter window once the recording's clock shift is known (debug setting, A/B test). */
+  shortWindow?: boolean;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -171,7 +173,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         paused: (on) => { detector.minInterval = on ? Infinity : 0; },
       },
       // The heavy model takes several seconds per jump on a mid-range phone.
-      { timeoutMs: 60_000 },
+      { timeoutMs: 60_000, shortWindow },
     );
   }, [detector, videoOutput, acc, gyro, maxFps]);
 

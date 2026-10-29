@@ -19,6 +19,7 @@ function setup(opts: {
   duration?: number;
   /** Seconds (frame clock) each result takes to be read out. */
   readout?: number;
+  shortWindow?: boolean;
 } = {}) {
   const jumps = opts.jumps ?? [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
   const scene = syntheticFrames({ fps: 240, duration: opts.duration ?? 14, jumps, seed: 5 });
@@ -81,7 +82,7 @@ function setup(opts: {
       while (now < until && !ended) await Promise.resolve();
     },
     log: (e) => logs.push(e),
-  });
+  }, { shortWindow: opts.shortWindow });
   /** The scene is over: nothing is read out any more. */
   let ended = false;
   async function run() {
@@ -158,6 +159,29 @@ describe("LiveController", () => {
   it("tolerates an inexact clip start time", async () => {
     const s = setup({ startLag: 0.2 });
     await s.run();
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+  });
+
+  it("learns how far the recording's clock is off from the first re-measured jump", async () => {
+    // The recording starts 0.2 s after the controller thinks (like the phone: offsets of −0.14 … −0.22 s).
+    const s = setup({ startLag: 0.2, liveFps: 60 });
+    await s.run();
+    const measured = s.logs.filter((e) => e.pose);
+    expect(measured).toHaveLength(2);
+    expect(measured[0].clockShift).toBe(0);
+    expect(measured[0].offset as number).toBeCloseTo(-0.2, 1);
+    // The second jump's window and times are corrected: what's left is the live analysis's own error.
+    expect(measured[1].clockShift as number).toBeCloseTo(-0.2, 1);
+    expect(Math.abs(measured[1].offset as number)).toBeLessThan(0.05);
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+  });
+
+  it("analyses a shorter window once the clock shift is known, if asked to", async () => {
+    const s = setup({ startLag: 0.2, shortWindow: true });
+    await s.run();
+    const [first, second] = s.analysed.map((w) => w.to - w.from);
+    // The first jump still gets the full window; the second 0.4 s less.
+    expect(first - second).toBeGreaterThan(0.3);
     expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
   });
 
