@@ -128,6 +128,17 @@ open class HybridPoseDetectorSpec_cxx {
       return std.string(self.__implementation.delegate)
     }
   }
+  
+  public final var minInterval: Double {
+    @inline(__always)
+    get {
+      return self.__implementation.minInterval
+    }
+    @inline(__always)
+    set {
+      self.__implementation.minInterval = newValue
+    }
+  }
 
   // Methods
   @inline(__always)

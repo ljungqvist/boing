@@ -25,6 +25,16 @@ describe("describeLog", () => {
     expect(describeLog({ ...e, camera: { fps: 30, maxFps: 30, exposureS: 0, iso: 0 } })).toContain("· camera 30 fps (max 30)");
   });
 
+  it("shows where the time went, from seeing the jump to its height", () => {
+    const e = { tOff: 1, hLive: 0.3, framesLive: 9, h: 0.28, frames: 28, fps: 60, ms: 5200, offset: 0.01,
+      waitMs: 1460, totalMs: 6800,
+      timing: { openMs: 0, decodeMs: 1830, poseMs: 4120, totalMs: 5150, decoded: 192, delegate: "GPU" } };
+    expect(describeLog(e)).toBe("t 1.0 s · live 30.0 cm (9 fr) → 28.0 cm (28 fr, 60 fps, 5200 ms, offset 0.01 s)"
+      + " · took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU), decode 1.8 alongside, 192 frames");
+    // Without the native breakdown (e.g. analysing failed): only the wait.
+    expect(describeLog({ ...e, timing: undefined })).toMatch(/· took 6.8 s: wait 1.5$/);
+  });
+
   it("lists the movements found when none matched the live jump", () => {
     const e = { tOff: 3, hLive: 0.2, framesLive: 9, error: "no-match", ms: 900, analysed: 70, withPose: 0, fps: 30, found: [] };
     expect(describeLog(e)).toContain("movements found: none");

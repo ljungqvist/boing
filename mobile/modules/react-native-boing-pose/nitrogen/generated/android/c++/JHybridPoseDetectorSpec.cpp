@@ -51,6 +51,15 @@ namespace margelo::nitro::boingpose {
     auto __result = method(_javaPart);
     return __result->toStdString();
   }
+  double JHybridPoseDetectorSpec::getMinInterval() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<double()>("getMinInterval");
+    auto __result = method(_javaPart);
+    return __result;
+  }
+  void JHybridPoseDetectorSpec::setMinInterval(double minInterval) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(double /* minInterval */)>("setMinInterval");
+    method(_javaPart, minInterval);
+  }
 
   // Methods
   std::vector<double> JHybridPoseDetectorSpec::detect(const std::shared_ptr<margelo::nitro::camera::HybridFrameSpec>& frame) {

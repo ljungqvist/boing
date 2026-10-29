@@ -28,10 +28,12 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
-
+// Forward declaration of `AnalyzeTiming` to properly resolve imports.
+namespace margelo::nitro::boingpose { struct AnalyzeTiming; }
 
 #include <vector>
 #include <string>
+#include "AnalyzeTiming.hpp"
 
 namespace margelo::nitro::boingpose {
 
@@ -46,10 +48,11 @@ namespace margelo::nitro::boingpose {
     std::vector<double> found     SWIFT_PRIVATE;
     std::vector<double> landmarks     SWIFT_PRIVATE;
     std::string delegate     SWIFT_PRIVATE;
+    AnalyzeTiming timing     SWIFT_PRIVATE;
 
   public:
     AnalyzeResult() = default;
-    explicit AnalyzeResult(double width, double height, std::vector<double> times, std::vector<double> found, std::vector<double> landmarks, std::string delegate): width(width), height(height), times(times), found(found), landmarks(landmarks), delegate(delegate) {}
+    explicit AnalyzeResult(double width, double height, std::vector<double> times, std::vector<double> found, std::vector<double> landmarks, std::string delegate, AnalyzeTiming timing): width(width), height(height), times(times), found(found), landmarks(landmarks), delegate(delegate), timing(timing) {}
 
   public:
     friend bool operator==(const AnalyzeResult& lhs, const AnalyzeResult& rhs) = default;
@@ -70,7 +73,8 @@ namespace margelo::nitro {
         JSIConverter<std::vector<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "times"))),
         JSIConverter<std::vector<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "found"))),
         JSIConverter<std::vector<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "landmarks"))),
-        JSIConverter<std::string>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "delegate")))
+        JSIConverter<std::string>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "delegate"))),
+        JSIConverter<margelo::nitro::boingpose::AnalyzeTiming>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "timing")))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::boingpose::AnalyzeResult& arg) {
@@ -81,6 +85,7 @@ namespace margelo::nitro {
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "found"), JSIConverter<std::vector<double>>::toJSI(runtime, arg.found));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "landmarks"), JSIConverter<std::vector<double>>::toJSI(runtime, arg.landmarks));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "delegate"), JSIConverter<std::string>::toJSI(runtime, arg.delegate));
+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "timing"), JSIConverter<margelo::nitro::boingpose::AnalyzeTiming>::toJSI(runtime, arg.timing));
       return obj;
     }
     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
@@ -97,6 +102,7 @@ namespace margelo::nitro {
       if (!JSIConverter<std::vector<double>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "found")))) return false;
       if (!JSIConverter<std::vector<double>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "landmarks")))) return false;
       if (!JSIConverter<std::string>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "delegate")))) return false;
+      if (!JSIConverter<margelo::nitro::boingpose::AnalyzeTiming>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "timing")))) return false;
       return true;
     }
   };

@@ -34,6 +34,20 @@ export interface AnalyzeOptions {
   preferGpu: boolean
 }
 
+/** Where the time of one `analyzeVideo` call went, for the diagnostics (milliseconds). */
+export interface AnalyzeTiming {
+  /** Loading the pose model; 0 when a prepared one was ready (see `prepare`). */
+  openMs: number
+  /** Decoding and converting frames; runs alongside the pose inference. */
+  decodeMs: number
+  /** Pose inference. */
+  poseMs: number
+  /** The whole call. */
+  totalMs: number
+  /** Frames decoded, including those before `from` back to the key frame. */
+  decoded: number
+}
+
 /** Pose of every analysed frame of a video. */
 export interface AnalyzeResult {
   width: number
@@ -46,6 +60,7 @@ export interface AnalyzeResult {
   landmarks: number[]
   /** "GPU" or "CPU". */
   delegate: string
+  timing: AnalyzeTiming
 }
 
 /** A pose landmarker in VIDEO mode, for the live camera. One per camera session. */
@@ -53,6 +68,11 @@ export interface PoseDetector
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   /** "GPU" or "CPU". */
   readonly delegate: string
+  /**
+   * Minimum seconds between analysed frames (0: every frame). `detect` returns an empty array for
+   * frames skipped because of it.
+   */
+  minInterval: number
   /**
    * Pose in a camera frame (synchronous, for the frame-output worklet).
    * Returns [t, width, height] followed by 33 × (x, y, z, visibility) when a person was found;
@@ -66,6 +86,14 @@ export interface PoseDetector
 export interface BoingPose
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   createDetector(modelPath: string, preferGpu: boolean): PoseDetector
+  /**
+   * Loads a pose model in the background for the next `analyzeVideo` with the same model and
+   * `preferGpu`, so that call doesn't wait for it. Each such call gets a fresh landmarker (no state
+   * from earlier videos) and a new one is loaded after it, until `releasePrepared`.
+   */
+  prepare(modelPath: string, preferGpu: boolean): void
+  /** Frees the model loaded by `prepare`. */
+  releasePrepared(): void
   videoInfo(path: string): VideoInfo
   /**
    * The report of the last crash (stack trace, time, device), or "" when there was none.

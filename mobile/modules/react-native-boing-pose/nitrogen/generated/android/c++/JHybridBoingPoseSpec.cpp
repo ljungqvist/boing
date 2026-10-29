@@ -13,6 +13,8 @@ namespace margelo::nitro::boingpose { class HybridPoseDetectorSpec; }
 namespace margelo::nitro::boingpose { struct VideoInfo; }
 // Forward declaration of `AnalyzeResult` to properly resolve imports.
 namespace margelo::nitro::boingpose { struct AnalyzeResult; }
+// Forward declaration of `AnalyzeTiming` to properly resolve imports.
+namespace margelo::nitro::boingpose { struct AnalyzeTiming; }
 // Forward declaration of `AnalyzeOptions` to properly resolve imports.
 namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 
@@ -27,6 +29,8 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include <NitroModules/JPromise.hpp>
 #include "JAnalyzeResult.hpp"
 #include <vector>
+#include "AnalyzeTiming.hpp"
+#include "JAnalyzeTiming.hpp"
 #include "AnalyzeOptions.hpp"
 #include "JAnalyzeOptions.hpp"
 #include <functional>
@@ -70,6 +74,14 @@ namespace margelo::nitro::boingpose {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JHybridPoseDetectorSpec::JavaPart>(jni::alias_ref<jni::JString> /* modelPath */, jboolean /* preferGpu */)>("createDetector");
     auto __result = method(_javaPart, jni::make_jstring(modelPath), preferGpu);
     return __result->getJHybridPoseDetectorSpec();
+  }
+  void JHybridBoingPoseSpec::prepare(const std::string& modelPath, bool preferGpu) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* modelPath */, jboolean /* preferGpu */)>("prepare");
+    method(_javaPart, jni::make_jstring(modelPath), preferGpu);
+  }
+  void JHybridBoingPoseSpec::releasePrepared() {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void()>("releasePrepared");
+    method(_javaPart);
   }
   VideoInfo JHybridBoingPoseSpec::videoInfo(const std::string& path) {
     static const auto method = _javaPart->javaClassStatic()->getMethod<jni::local_ref<JVideoInfo>(jni::alias_ref<jni::JString> /* path */)>("videoInfo");

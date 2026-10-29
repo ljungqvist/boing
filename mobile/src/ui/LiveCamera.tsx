@@ -44,6 +44,12 @@ interface Props {
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
+/**
+ * While a jump is measured from the recording, the live analysis runs at ≤ 40 fps (every other frame
+ * at 60 fps), leaving the processor to the measurement. 30 fps still finds every jump; the heights
+ * come from the recording anyway.
+ */
+const MEASURING_INTERVAL = 1 / 40;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
 export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip }: Props) {
@@ -89,12 +95,18 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         onInfo(info.current);
         setDetector(det);
         // In the background; until it's there (or if it can't be loaded), re-measure with the live model.
-        modelPath("heavy").then((h) => { if (alive) measureModel.current = h; }, () => {});
+        // Loaded ahead of each jump, so measuring doesn't wait for it.
+        modelPath("heavy").then((h) => {
+          if (!alive) return;
+          measureModel.current = h;
+          boingPose.prepare(toPath(h), true);
+        }, () => {});
       })
       .catch((e) => alive && onError(e));
     return () => {
       alive = false;
       setDetector(null);
+      boingPose.releasePrepared();
       // Let a frame being analysed finish before freeing the model.
       setTimeout(() => det?.close(), 500);
     };
@@ -104,7 +116,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   // The controller: live tracking, recording in clips, re-measuring each jump.
   const controller = useMemo(() => {
     if (!detector) return null;
-    return new LiveController(
+    const pace = () => { detector.minInterval = c.pending > 0 ? MEASURING_INTERVAL : 0; };
+    const c: LiveController = new LiveController(
       {
         async startClip() {
           const recorder = await videoOutput.createRecorder({});
@@ -130,10 +143,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             if (!heavy) throw e;
             // A heavy model that won't load (damaged download): stay with the live model from now on.
             measureModel.current = heavy = null;
+            boingPose.releasePrepared();
             r = await run(model.current!);
           }
           const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
-          return { frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts };
+          return {
+            frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts,
+            timing: { ...r.timing, delegate: r.delegate },
+          };
         },
         deleteClip(path, hasJumps) {
           const { keep: keepIt, onKeptClip: kept } = debugRef.current;
@@ -152,13 +169,20 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       },
       {
         status: (s) => eventsRef.current.status(s),
-        measuring: () => eventsRef.current.measuring(),
-        result: (m) => eventsRef.current.result(m),
+        measuring: () => {
+          pace();
+          eventsRef.current.measuring();
+        },
+        result: (m) => {
+          pace();
+          eventsRef.current.result(m);
+        },
         log: (e) => eventsRef.current.log?.(e),
       },
       // The heavy model takes several seconds per jump on a mid-range phone.
       { timeoutMs: 60_000 },
     );
+    return c;
   }, [detector, videoOutput, acc, gyro, maxFps]);
 
   useEffect(() => {
@@ -180,7 +204,11 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const onFrame = useCallback((frame: Frame) => {
     "worklet";
     try {
-      if (detector) scheduleOnRN(onPose, detector.detect(frame));
+      if (detector) {
+        const a = detector.detect(frame);
+        // Empty: skipped (live analysis paced down while measuring).
+        if (a.length > 0) scheduleOnRN(onPose, a);
+      }
     } finally {
       frame.dispose();
     }

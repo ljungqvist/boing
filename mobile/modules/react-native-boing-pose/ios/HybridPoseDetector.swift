@@ -10,6 +10,10 @@ class HybridPoseDetector: HybridPoseDetectorSpec {
   private let landmarker: VideoLandmarker
   private let lock = NSLock()
   private var closed = false
+  /// Time of the last analysed frame (seconds).
+  private var lastT = -Double.infinity
+
+  var minInterval: Double = 0
 
   init(modelPath: String, preferGpu: Bool) throws {
     landmarker = try VideoLandmarker.create(modelPath: modelPath, preferGpu: preferGpu)
@@ -23,6 +27,8 @@ class HybridPoseDetector: HybridPoseDetectorSpec {
       throw RuntimeError.error(withMessage: "Frame has no sample buffer")
     }
     let t = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+    if t - lastT < minInterval - 0.0005 { return [] }
+    lastT = t
     var width = 0.0, height = 0.0
     if let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) {
       width = Double(CVPixelBufferGetWidth(pixels))

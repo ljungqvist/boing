@@ -51,6 +51,8 @@ namespace margelo::nitro::boingpose {
   public:
     // Properties
     std::string getDelegate() override;
+    double getMinInterval() override;
+    void setMinInterval(double minInterval) override;
 
   public:
     // Methods

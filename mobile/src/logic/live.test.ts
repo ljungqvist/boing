@@ -42,7 +42,7 @@ function setup(opts: {
       const frames: PoseFrame[] = scene.frames
         .filter((f) => f.t - start >= from && f.t - start <= to)
         .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: drifted(f, takeoff) }));
-      return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 } };
+      return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 }, timing: { poseMs: 900, delegate: "GPU" } };
     },
     deleteClip(path, hasJumps) {
       const c = clips.find((x) => `clip@${x.start}` === path);
@@ -106,6 +106,9 @@ describe("LiveController", () => {
     expect(measured.every((e) => (e.motion as { tiltDeg: number }).tiltDeg === 30 && typeof e.clip === "string")).toBe(true);
     // And the camera's exposure (motion blur of the feet).
     expect(measured.every((e) => (e.camera as { exposureS: number }).exposureS === 0.01)).toBe(true);
+    // And where the time went: waiting for the recording, then analysing it.
+    expect(measured.every((e) => (e.timing as { delegate: string }).delegate === "GPU")).toBe(true);
+    expect(measured.every((e) => typeof e.waitMs === "number" && (e.totalMs as number) >= (e.waitMs as number))).toBe(true);
     expect(s.clips.filter((c) => c.hasJumps)).toHaveLength(2);
     // Every clip is stopped and deleted in the end.
     expect(s.clips.every((c) => c.stopped && c.deleted)).toBe(true);
@@ -187,6 +190,28 @@ describe("LiveController", () => {
     expect(s.results).toHaveLength(2);
     expect(s.results.every((m) => m.refined && !accepted(m.jump) && m.jump.flags.includes("inconsistent"))).toBe(true);
     expect(s.results.some((m) => m.approximate)).toBe(false);
+  });
+
+  it("starts measuring without waiting for the next recording to start", async () => {
+    // A recorder that takes long to start (CameraX can take a second): the jump's measurement must
+    // not wait for it. Here the clip after the jump starts only once the measurement has begun.
+    const s = setup({ jumps: [{ tTakeoff: 4, height: 0.3 }], duration: 8 });
+    const deps = (s.live as unknown as { deps: LiveDeps }).deps;
+    const start = deps.startClip.bind(deps);
+    const analyse = deps.analyzeClip.bind(deps);
+    let began!: () => void;
+    const analysing = new Promise<void>((ok) => (began = ok));
+    let n = 0;
+    deps.startClip = async () => {
+      const k = n++;
+      const c = await start();
+      if (k === 1) await analysing;
+      return c;
+    };
+    deps.analyzeClip = (...a) => { began(); return analyse(...a); };
+    await s.run();
+    expect(n).toBe(2);
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(1);
   });
 
   it("is no longer pending when a result arrives", async () => {

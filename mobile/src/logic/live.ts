@@ -18,10 +18,12 @@ export interface LiveDeps {
   /** Starts recording the camera. Resolves once recording has started. */
   startClip(): Promise<Clip>;
   /**
-   * Pose of every recorded frame between `from` and `to` (seconds from the clip's start), and
-   * facts about the recorded file (size, rotation, frame rate) for the diagnostics.
+   * Pose of every recorded frame between `from` and `to` (seconds from the clip's start), and for
+   * the diagnostics: facts about the recorded file (size, rotation, frame rate) and where the time went.
    */
-  analyzeClip(path: string, from: number, to: number): Promise<{ frames: PoseFrame[]; size: Size; video?: Record<string, unknown> }>;
+  analyzeClip(path: string, from: number, to: number): Promise<{
+    frames: PoseFrame[]; size: Size; video?: Record<string, unknown>; timing?: Record<string, unknown>;
+  }>;
   /** Deletes a finished clip (`hasJumps`: it was measured; a debug setting may keep those). */
   deleteClip(path: string, hasJumps?: boolean): void;
   /** Motion-sensor samples between two times on the frame clock, if the phone's sensors are read. */
@@ -87,6 +89,8 @@ export class LiveController {
   private readonly rotateSeconds: number;
   private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
+  /** When each jump waiting for its re-measured height was seen (`Date.now()`). */
+  private readonly seenAt = new Map<Jump, number>();
   /** Jumps waiting for their re-measured height. */
   pending = 0;
 
@@ -166,6 +170,7 @@ export class LiveController {
       return;
     }
     this.pending++;
+    this.seenAt.set(j, Date.now());
     this.events.measuring();
     c.jumps.push(j);
   }
@@ -208,8 +213,8 @@ export class LiveController {
     } finally {
       this.starting = false;
     }
-    if (!this.stopped) await this.startClip();
-    await this.measure(old, path);
+    // Measuring doesn't wait for the next recording to start.
+    await Promise.all([this.stopped ? null : this.startClip(), this.measure(old, path)]);
   }
 
   private async stopClip(c: OpenClip): Promise<string | null> {
@@ -228,6 +233,10 @@ export class LiveController {
       try {
         for (const j of c.jumps) {
           const { measured, log } = await this.refine(j, c, path);
+          const seen = this.seenAt.get(j);
+          this.seenAt.delete(j);
+          // From the moment the jump was seen live until its height is ready.
+          if (seen !== undefined) log.totalMs = Date.now() - seen;
           // Not pending any more when the result arrives (the app clears "Measuring…" at zero).
           this.pending--;
           done++;
@@ -237,6 +246,7 @@ export class LiveController {
       } finally {
         // Even if a result handler throws: nothing stays pending, the clip is deleted.
         this.pending -= c.jumps.length - done;
+        for (const j of c.jumps) this.seenAt.delete(j);
         if (path) this.deps.deleteClip(path, c.jumps.length > 0);
       }
     });
@@ -272,6 +282,9 @@ export class LiveController {
       return fallback();
     }
     const t0 = Date.now();
+    const seen = this.seenAt.get(live);
+    // Waiting for the end of the recording (and for earlier jumps) before measuring could start.
+    if (seen !== undefined) log.waitMs = t0 - seen;
     try {
       const from = Math.max(0, live.tOff - BEFORE - PAD - c.start);
       const to = live.tOn + AFTER + PAD - c.start;
@@ -281,7 +294,7 @@ export class LiveController {
       Object.assign(size, r.size);
       const frames = r.frames.map((f) => ({ t: f.t + c.start, lm: f.lm }));
       const fps = frameRate(frames);
-      Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video });
+      Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video, timing: r.timing });
       // For offline analysis (shared separately, see poseReport).
       log.pose = compactPose(frames, r.size);
       const found = jumpsIn(frames, r.size);
