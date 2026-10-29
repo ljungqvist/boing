@@ -98,3 +98,122 @@ only be needed for the hips' apex and to find the feet, so it may not have to ru
 window (and higher capture rates become affordable). That is the path to "more accurate *and* faster",
 but it needs the library run over the new sessions (other people, shoes, floors) to fix its threshold
 first, as decided on 2026-10-21.
+
+## Results from the phone (2026-10-29)
+
+Analysed on gwb on 2026-10-30. The earlier jumps of the evening were not kept (recordings were off);
+four jumps of the new build were sent afterwards, one per upload (front camera, 60 fps, GPU).
+
+### New build: ≈ 5.6 s from jump seen to height (was ≈ 15 s of analysis alone)
+
+| per jump (4 jumps) | median | range |
+|---|---|---|
+| `totalMs` (jump seen → height) | 5.62 s | 5.58–5.75 s |
+| `waitMs` (jump seen → measuring starts) | 0.10 s | 0.09–0.12 s |
+| `openMs` (model) | 0.0 s | prepared every time |
+| `poseMs` | 4.9 s | 4.80–5.01 s for 144–147 frames: **33–34 ms per frame** |
+| `decodeMs` (alongside) | 3.8 s | 3.55–3.96 s for 173–198 decoded frames (from the key frame), < `poseMs` |
+
+The old build needed ≈ 100 ms per frame all in, the new one 38 ms (pose 33 ms of it). The pose model is
+now ≈ 87 % of the time; waiting, loading and decoding are nearly gone. On top of the 5.6 s come the
+0.8 s after landing before the live tracker reports the jump.
+
+**Heights unchanged.** Takeoff and landing marked by eye on the clips (foot crops, ±1 frame), height from
+the flight time, against the app: −0.9, +1.2, −0.6, −1.1 cm (the 4th −2.8 cm if the landing is one frame
+earlier). Mean −0.4 cm, the same as the app-clip library set (−0.4 ± 0.9 cm). fps 60.0, 24–35 frames in
+the air, g 8.3–10.5, offsets −0.14 … −0.22 s, all 4 accepted (flags `disagree` 2×, `toe-plateau` +
+`camera-moved` 1×). One jump at a time held: one jump per upload, each measured within 0.1 s of being
+seen.
+
+### Old build: where the time went (all uploads 2026-10-19 … 10-27)
+
+34 re-measured jumps in 8 sessions (10 at 30 fps, 24 at 60 fps). The old build logs only `ms`
+(analysis: open, decode, pose), not the wait before it.
+
+| | median | range |
+|---|---|---|
+| analysis `ms`, 60 fps (≈ 145 frames) | 15.0 s | 12.6–21.3 s (one 41.9 s, below) |
+| ms per analysed frame, all in | 111 ms | 87–217 ms |
+
+That is ≈ 100 ms per frame all in at 60 fps. Add the recording stop and the next clip's start, and you
+get the ≈ 20 s heard on the phone. The build 36 timing line will split it into model / pose / decode.
+
+**One live "jump" with a 26 m height** (≈ 4.6 s in the air: a false alarm, not a jump) was re-measured
+over 395 frames. It took 41.9 s and ended in `no-match`. With one jump at a time, that blocks the app
+for the whole 41.9 s.
+
+### Old build: the takeoff offset is a steady bias, not scatter
+
+`offset` (re-measured − live takeoff) over 31 matched jumps: **never within ±0.1 s**; 17 within
+±0.2 s, 29 within ±0.3 s.
+
+| | offsets (s) |
+|---|---|
+| 30 fps (one setup) | −0.31 … −0.19, nearly all −0.23 … −0.26 |
+| 60 fps | −0.28 … −0.11, median −0.15; two outliers −0.47 and +0.16 (both rejected jumps) |
+
+The re-measured takeoff is always 0.1–0.3 s *earlier* than the live one, and the size of the bias
+depends on the setup (frame rate or phone). So the live → recording clock mapping (or the live takeoff
+time) runs late by a near-constant amount. Because of that, today's window really holds ≈ 0.85–0.95 s
+before the takeoff and ≈ 1.05–1.15 s after the landing, not 1.1 / 0.9 s. `PAD` 0.3 s can't simply
+shrink to 0.1 s: the bias would eat it. First correct the bias (find where it comes from, or shift the
+window by it). Then shrink `PAD` to cover only the scatter around it (≈ ±0.1 s at 60 fps).
+
+### Old build: "couldn't measure"
+
+15 of 34 re-measurements failed (44 %; 2 of 10 at 30 fps, 13 of 24 at 60 fps):
+
+| result | count | flags |
+|---|---|---|
+| `rejected` | 12 | `poor-fit` 12, `disagree` 9, `camera-moved` 7, `inconsistent` 3, `out-of-view` 1, `not-parabola` 1 |
+| `no-match` (no jump within 0.5 s of the live one) | 3 | one is the 26 m false alarm above |
+
+Likely causes:
+- `camera-moved` shows up in 7 of the 13 failures at 60 fps. Either the phone moved (handheld or
+  bumped), or the check fires on something else at 60 fps. Those clips are worth a look.
+- `poor-fit` + `disagree` without `camera-moved` (4) means the pose loses the feet in the air. These
+  rejections are safe: in the library, the same flags mark jumps read at half their true height.
+- The `no-match` cases are live false alarms, which the re-measurement rightly refused.
+
+### Window evaluation on the jump library
+
+`npx tsx tools/library/window_eval.ts` (≈ 5 min on gwb) cuts each library jump to a window around its
+own (true) takeoff. The table compares today's window with the shortest one: accepted / total, error
+mean ± sd, worst (cm).
+
+| set | 1.1 / 0.9 s (today) | 0.7 / 0.5 s |
+|---|---|---|
+| front, native 30 fps (10-19) | 10/10 +1.7 ± 2.1, +5.4 | 10/10 +1.7 ± 2.1, +5.4 |
+| front, native 60 fps (10-21) | 7/8 +2.2 ± 1.3, +3.4 | 7/8 +2.2 ± 1.2, +3.4 |
+| front, 60 fps, pose on every frame of the app's clip (10-23) | **7/10** −0.4 ± 0.9, −1.6 | **6/10** −0.4 ± 1.0, −1.6 |
+| front, native 60 fps (10-15, plus the 6 upload jumps of 10-24/27) | 12/19 +1.3 ± 2.2, +6.1 | 12/19 +1.2 ± 2.4, +6.1 |
+| front, full rate 60–240 fps | 10/11 +3.0 ± 1.6, +5.3 | 10/11 +2.8 ± 1.9, +5.3 |
+| front, simulated 30–240 fps (7 sets) | means +2.8 … +4.9 | each within 0.2 cm, same counts |
+| side, simulated 30/60 fps (6 sets) | 423/432 accepted | 421/432, means within 0.3 cm, worst ≤ today |
+| RTMPose sets (3) | | within 0.1 cm, same counts |
+
+0.9 / 0.7 s and 0.8 / 0.6 s fall between the two (every mean within 0.2 cm of today). Halving the frame
+rate before −0.3 s moves the app-clip set to −0.9 ± 1.2 cm (worst −2.4) at 1.1 / 0.9 s. At 0.9 / 0.7 s
+it gives the same result as the 0.7 / 0.5 s column.
+
+- **Heights don't shift** with a shorter window: means within 0.3 cm, worst errors the same or better.
+- **One app-clip jump is lost with *every* shorter window.** Today it is accepted at 13.1 cm (truth
+  13.6, flag `camera-moved`); at 0.9 / 0.7 s it is already rejected. With less standing time before the
+  takeoff, the floor level is off when the camera moves. It's a safe failure (a rejection, not a wrong
+  height), but one more "couldn't measure".
+- The evaluation centres the window on the true takeoff. The app centres it on the live takeoff, which
+  is 0.1–0.3 s late (above). So in the app, the window before the takeoff is shorter than these names
+  say.
+
+### Next step
+
+1. **CPU vs GPU for the pose model** (it is ≈ 87 % of the time now, 33 ms per frame on the GPU): a menu
+   switch "Re-measure jumps on: GPU / CPU" (branch `claude/remeasure-cpu-option`) to compare on the
+   phone, same jumps' `poseMs` per frame.
+2. **Don't re-measure live "jumps" that can't be jumps** (over 1 s in the air, i.e. heights of
+   metres). Each costs tens of seconds of a blocked app and ends in a `no-match`. Done on the same
+   branch.
+3. **Find the takeoff bias** (live vs recording clock) before touching the window. After that, `PAD`
+   0.1 s (0.9 / 0.7 s, ≈ 16 % fewer frames) is the step the library supports. The price is jumps like
+   the `camera-moved` one above. It saves fewer frames than a faster pose per frame could, so it comes
+   after step 1.
