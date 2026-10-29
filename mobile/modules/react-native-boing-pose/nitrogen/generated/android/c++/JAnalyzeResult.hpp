@@ -10,6 +10,8 @@
 #include <fbjni/fbjni.h>
 #include "AnalyzeResult.hpp"
 
+#include "AnalyzeTiming.hpp"
+#include "JAnalyzeTiming.hpp"
 #include <string>
 #include <vector>
 
@@ -44,6 +46,8 @@ namespace margelo::nitro::boingpose {
       jni::local_ref<jni::JArrayDouble> landmarks = this->getFieldValue(fieldLandmarks);
       static const auto fieldDelegate = clazz->getField<jni::JString>("delegate");
       jni::local_ref<jni::JString> delegate = this->getFieldValue(fieldDelegate);
+      static const auto fieldTiming = clazz->getField<JAnalyzeTiming>("timing");
+      jni::local_ref<JAnalyzeTiming> timing = this->getFieldValue(fieldTiming);
       return AnalyzeResult(
         width,
         height,
@@ -65,7 +69,8 @@ namespace margelo::nitro::boingpose {
           landmarks->getRegion(0, __size, __vector.data());
           return __vector;
         }(),
-        delegate->toStdString()
+        delegate->toStdString(),
+        timing->toCpp()
       );
     }
 
@@ -75,7 +80,7 @@ namespace margelo::nitro::boingpose {
      */
     [[maybe_unused]]
     static jni::local_ref<JAnalyzeResult::javaobject> fromCpp(const AnalyzeResult& value) {
-      using JSignature = JAnalyzeResult(double, double, jni::alias_ref<jni::JArrayDouble>, jni::alias_ref<jni::JArrayDouble>, jni::alias_ref<jni::JArrayDouble>, jni::alias_ref<jni::JString>);
+      using JSignature = JAnalyzeResult(double, double, jni::alias_ref<jni::JArrayDouble>, jni::alias_ref<jni::JArrayDouble>, jni::alias_ref<jni::JArrayDouble>, jni::alias_ref<jni::JString>, jni::alias_ref<JAnalyzeTiming>);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -100,7 +105,8 @@ namespace margelo::nitro::boingpose {
           __array->setRegion(0, __size, value.landmarks.data());
           return __array;
         }(),
-        jni::make_jstring(value.delegate)
+        jni::make_jstring(value.delegate),
+        JAnalyzeTiming::fromCpp(value.timing)
       );
     }
   };

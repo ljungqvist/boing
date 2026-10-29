@@ -12,6 +12,7 @@ import NitroModules
 public protocol HybridPoseDetectorSpec_protocol: HybridObject {
   // Properties
   var delegate: String { get }
+  var minInterval: Double { get set }
 
   // Methods
   func detect(frame: (any HybridFrameSpec)) throws -> [Double]

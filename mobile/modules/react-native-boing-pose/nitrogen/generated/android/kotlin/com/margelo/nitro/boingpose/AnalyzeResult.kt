@@ -35,7 +35,10 @@ data class AnalyzeResult(
   val landmarks: DoubleArray,
   @DoNotStrip
   @Keep
-  val delegate: String
+  val delegate: String,
+  @DoNotStrip
+  @Keep
+  val timing: AnalyzeTiming
 ) {
   /* primary constructor */
 
@@ -48,6 +51,7 @@ data class AnalyzeResult(
       && Objects.deepEquals(this.found, other.found)
       && Objects.deepEquals(this.landmarks, other.landmarks)
       && Objects.deepEquals(this.delegate, other.delegate)
+      && Objects.deepEquals(this.timing, other.timing)
   }
 
   override fun hashCode(): Int {
@@ -57,7 +61,8 @@ data class AnalyzeResult(
       times,
       found,
       landmarks,
-      delegate
+      delegate,
+      timing
     ).contentDeepHashCode()
   }
 
@@ -69,8 +74,8 @@ data class AnalyzeResult(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(width: Double, height: Double, times: DoubleArray, found: DoubleArray, landmarks: DoubleArray, delegate: String): AnalyzeResult {
-      return AnalyzeResult(width, height, times, found, landmarks, delegate)
+    private fun fromCpp(width: Double, height: Double, times: DoubleArray, found: DoubleArray, landmarks: DoubleArray, delegate: String, timing: AnalyzeTiming): AnalyzeResult {
+      return AnalyzeResult(width, height, times, found, landmarks, delegate, timing)
     }
   }
 }

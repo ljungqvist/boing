@@ -49,6 +49,8 @@ namespace margelo::nitro::boingpose {
     public:
       // Properties
       virtual std::string getDelegate() = 0;
+      virtual double getMinInterval() = 0;
+      virtual void setMinInterval(double minInterval) = 0;
 
     public:
       // Methods
