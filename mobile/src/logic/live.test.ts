@@ -17,6 +17,8 @@ function setup(opts: {
   clipDrift?: number;
   jumps?: { tTakeoff: number; height: number }[];
   duration?: number;
+  /** Seconds (frame clock) each result takes to be read out. */
+  readout?: number;
 } = {}) {
   const jumps = opts.jumps ?? [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
   const scene = syntheticFrames({ fps: 240, duration: opts.duration ?? 14, jumps, seed: 5 });
@@ -72,9 +74,16 @@ function setup(opts: {
     status: (st) => statuses.add(st.text),
     paused: (on) => paused.push(on),
     measuring: () => measuring++,
-    result: (m) => { results.push(m); pendingAtResult.push(live.pending); },
+    result: async (m) => {
+      results.push(m);
+      pendingAtResult.push(live.pending);
+      const until = now + (opts.readout ?? 0);
+      while (now < until && !ended) await Promise.resolve();
+    },
     log: (e) => logs.push(e),
   });
+  /** The scene is over: nothing is read out any more. */
+  let ended = false;
   async function run() {
     let last = -Infinity;
     for (const f of scene.frames) {
@@ -85,6 +94,7 @@ function setup(opts: {
       await Promise.resolve(); // let clip starts settle between frames
       await Promise.resolve();
     }
+    ended = true;
     await live.stop();
   }
   return { live, run, results, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
@@ -214,6 +224,15 @@ describe("LiveController", () => {
     expect(s.statuses).toContain("Measuring · not ready");
     // Nothing recorded while measuring: the next clip starts after it.
     expect(s.clips[1].start).toBeGreaterThanOrEqual(9);
+  });
+
+  it("doesn't see a jump made while the height is read out", async () => {
+    // Measuring is quick here, but reading out the height takes 3 s: the jump at 6.8 s comes then.
+    const s = setup({ jumps: [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 6.8, height: 0.25 }, { tTakeoff: 11, height: 0.22 }], readout: 3 });
+    await s.run();
+    const ok = s.results.filter((m) => accepted(m.jump));
+    expect(ok.map((m) => Math.round(m.jump.tOff))).toEqual([4, 11]);
+    expect(ok.every((m) => m.refined)).toBe(true);
   });
 
   it("is no longer pending when a result arrives", async () => {

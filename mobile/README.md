@@ -44,6 +44,10 @@ downloadable without a GitHub login:
 
 - main: https://github.com/ljungqvist/boing/releases/latest/download/boing.apk
 - dev: https://github.com/ljungqvist/boing/releases/download/dev-latest/boing-dev.apk
+
+Each CI build is numbered (the workflow's run number) and carries its commit: the app's settings show
+"Build 37 (be5d3b1, dev)", Android's app info shows version "0.1.0 (build 37, be5d3b1)", and the
+diagnostics start with it. Local builds say "local".
 For development with hot reload: `npx expo run:android` (debug build + Metro).
 
 ## iOS
