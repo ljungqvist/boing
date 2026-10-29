@@ -1,7 +1,7 @@
 import type { Jump } from "../../../src/analysis/jumps";
 import { JumpTracker } from "../../../src/analysis/tracker";
 import type { PoseFrame } from "../../../src/analysis/types";
-import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MAX_FLIGHT, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
+import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MAX_FLIGHT, MOVEMENT_REJECT, PAD, PAD_SHORT, REJECT, refinable } from "./measure";
 import type { Size } from "./pose";
 import { compactPose } from "./diagnostics";
 import { motionSummary, type Sample } from "./motion";
@@ -62,6 +62,8 @@ export interface LiveOptions {
   rotateSecondsInView?: number;
   /** Give up re-measuring a jump after this many milliseconds. */
   timeoutMs?: number;
+  /** Once the recording's clock shift is known, pad the window by `PAD_SHORT` instead of `PAD` (A/B test). */
+  shortWindow?: boolean;
 }
 
 /** Live pose history kept for status, fallback plots and diagnostics (seconds). */
@@ -102,6 +104,12 @@ export class LiveController {
   private readonly rotateSeconds: number;
   private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
+  private readonly shortWindow: boolean;
+  /**
+   * How far the re-measured takeoffs came out from the live ones (seconds, latest last). The recording
+   * starts later than `OpenClip.start` says (≈ 0.15–0.2 s on the phone), the same for every clip.
+   */
+  private readonly offsets: number[] = [];
   /** When each jump waiting for its re-measured height was seen (`Date.now()`). */
   private readonly seenAt = new Map<Jump, number>();
   /** Jumps waiting for their re-measured height. */
@@ -117,6 +125,18 @@ export class LiveController {
     this.rotateSeconds = opts.rotateSeconds ?? 15;
     this.rotateSecondsInView = opts.rotateSecondsInView ?? 60;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
+    this.shortWindow = opts.shortWindow ?? false;
+  }
+
+  /** The recording's clock shift: the median of the last 5 offsets (0 before the first). */
+  private get clockShift(): number {
+    const o = this.offsets.slice(-5).sort((a, b) => a - b);
+    return o.length ? o[Math.floor(o.length / 2)] : 0;
+  }
+
+  /** Padding of the re-measuring window: short only once the clock shift is known. */
+  private get pad(): number {
+    return this.shortWindow && this.offsets.length > 0 ? PAD_SHORT : PAD;
   }
 
   /** Live analysis rate (frames per second over the last second). */
@@ -148,7 +168,7 @@ export class LiveController {
     if (this.busy) {
       // Only finish the jump's recording (a little after the landing); then measuring starts.
       const c = this.clip;
-      if (c && c.jumps.length > 0 && t >= Math.max(...c.jumps.map((j) => j.tOn + AFTER + PAD))) void this.rotate();
+      if (c && c.jumps.length > 0 && t >= Math.max(...c.jumps.map((j) => j.tOn + AFTER + this.pad + this.clockShift))) void this.rotate();
       return;
     }
     if (Number.isNaN(this.firstT)) this.firstT = t;
@@ -170,7 +190,7 @@ export class LiveController {
       return;
     }
     const c = this.clip;
-    const lastEnd = Math.max(...c.jumps.map((j) => j.tOn + AFTER + PAD));
+    const lastEnd = Math.max(...c.jumps.map((j) => j.tOn + AFTER + this.pad + this.clockShift));
     // A clip with jumps ends once it covers them; one without is replaced now and then. Not soon while
     // someone is in the picture: people jump every 15–20 s (after hearing the height), and a new clip
     // started in the countermovement lacks the standing before the takeoff.
@@ -341,13 +361,17 @@ export class LiveController {
     // Waiting for the end of the recording (and for earlier jumps) before measuring could start.
     if (seen !== undefined) log.waitMs = t0 - seen;
     try {
-      const from = Math.max(0, live.tOff - BEFORE - PAD - c.start);
-      const to = live.tOn + AFTER + PAD - c.start;
-      log.window = { from, to };
+      // The recording's t = 0 on the live clock, corrected by the shift learned from earlier jumps.
+      const shift = this.clockShift;
+      const start = c.start - shift;
+      const pad = this.pad;
+      const from = Math.max(0, live.tOff - BEFORE - pad - start);
+      const to = live.tOn + AFTER + pad - start;
+      Object.assign(log, { window: { from, to }, clockShift: shift, pad });
       const r = await withTimeout(this.deps.analyzeClip(path, from, to), this.timeoutMs);
       log.ms = Date.now() - t0;
       Object.assign(size, r.size);
-      const frames = r.frames.map((f) => ({ t: f.t + c.start, lm: f.lm }));
+      const frames = r.frames.map((f) => ({ t: f.t + start, lm: f.lm }));
       const fps = frameRate(frames);
       Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video, timing: r.timing });
       // For offline analysis (shared separately, see poseReport).
@@ -363,6 +387,8 @@ export class LiveController {
         h: jump.hPrimary, hRise: jump.hRise, hFlight: jump.hFlight, frames: jump.airborneFrames, g: jump.gImplied,
         offset: jump.tOff - live.tOff, flags: jump.flags,
       });
+      // Learn from accepted jumps only (offset is what's left after the shift already applied).
+      if (!jump.flags.some((f) => REJECT.includes(f))) this.offsets.push(shift + jump.tOff - live.tOff);
       const measured: Measured = { jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames };
       if (jump.flags.some((f) => REJECT.includes(f))) {
         log.error = "rejected";
