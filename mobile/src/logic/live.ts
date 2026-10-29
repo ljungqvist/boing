@@ -1,7 +1,7 @@
 import type { Jump } from "../../../src/analysis/jumps";
 import { JumpTracker } from "../../../src/analysis/tracker";
 import type { PoseFrame } from "../../../src/analysis/types";
-import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
+import { accepted, AFTER, BEFORE, closestJump, frameRate, jumpsIn, MAX_FLIGHT, MOVEMENT_REJECT, PAD, REJECT, refinable } from "./measure";
 import type { Size } from "./pose";
 import { compactPose } from "./diagnostics";
 import { motionSummary, type Sample } from "./motion";
@@ -192,7 +192,7 @@ export class LiveController {
     const live = this.liveMeasurement(j, size);
     const c = this.clip;
     // The recording must include some standing before takeoff (the floor level).
-    if (!c || !refinable(j) || j.tOff - 0.5 < c.start) {
+    if (!c || !refinable(j) || j.tOn - j.tOff > MAX_FLIGHT || j.tOff - 0.5 < c.start) {
       this.events.log?.({
         tOff: j.tOff, hLive: j.hPrimary, framesLive: j.airborneFrames, gLive: j.gImplied, flagsLive: j.flags,
         refined: false, reason: c ? "not-refinable-or-before-clip" : "no-clip",
