@@ -70,7 +70,9 @@ Not yet run on a phone: the APK is built by CI from this branch.
   because the live → recording clock mapping is approximate; the logged `offset` shows how far off it is.
   If it's always < 0.1 s, `PAD` 0.1 would save ≈ 16 % of the frames. This changes which standing frames
   the floor level and noise estimate see, so it needs a run over the jump library first (gwb), not a
-  guess.
+  guess: `npx tsx tools/library/window_eval.ts` cuts every library jump to shorter windows (and a
+  variant at half the frame rate more than 0.3 s before takeoff) and prints the error per set. Shorter
+  windows save up to ≈ 30 % of the frames (0.7 / 0.5 s: 102 instead of 150 at 60 fps).
 
 ## Own pose model? Not now
 
