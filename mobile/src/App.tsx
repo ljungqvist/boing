@@ -327,6 +327,7 @@ function Main() {
             onInfo={setInfo}
             keep={keepNow}
             measureOnCpu={settings.measureOnCpu === true}
+            shortWindow={settings.shortWindow === true}
             onKeptClip={(id, name) => {
               // The clip's log entries are all in by now (the controller logs before it keeps the clip).
               const mine = entriesForClip(clipLogs.current, name);
@@ -454,7 +455,10 @@ function Main() {
           <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
             <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
           </Pressable>
-          <Text style={s.hint}>For comparing the speed; applies from the next Start.</Text>
+          <Pressable style={s.wide} onPress={() => updateSettings({ shortWindow: settings.shortWindow !== true })}>
+            <Text style={s.wideText}>Re-measuring window: {settings.shortWindow === true ? "short" : "normal"}</Text>
+          </Pressable>
+          <Text style={s.hint}>For comparing the speed; both apply from the next Start.</Text>
           {logs.length > 0 && (
             <>
               <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
