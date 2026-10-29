@@ -36,8 +36,11 @@ export interface LiveEvents {
   status(s: Status): void;
   /** A jump was seen; its height follows. */
   measuring(): void;
-  /** A finished measurement (also for rejected movements: check `accepted(m.jump)`). */
-  result(m: Measured): void;
+  /**
+   * A finished measurement (also for rejected movements: check `accepted(m.jump)`). May return a
+   * promise for its announcement: after a re-measured jump, the live analysis resumes once it resolves.
+   */
+  result(m: Measured): void | Promise<void>;
   /** Diagnostics for each live jump (refinement details). */
   log?(entry: Record<string, unknown>): void;
   /**
@@ -231,7 +234,8 @@ export class LiveController {
    * Ends the current clip and starts the next. The old recording is stopped first: cameras
    * record one file at a time (CameraX crashes otherwise). The short gap is right after a
    * jump's landing or during a quiet stretch. A clip with a jump is measured first, with the live
-   * analysis paused; the next recording starts after its height is out, then the live analysis resumes.
+   * analysis paused; the next recording starts after its height has been read out, then the live
+   * analysis resumes.
    */
   private async rotate() {
     const old = this.clip;
@@ -291,7 +295,8 @@ export class LiveController {
           this.pending--;
           done++;
           this.events.log?.(log);
-          this.events.result(measured);
+          // Read out before the next jump can be seen.
+          await this.events.result(measured);
         }
       } finally {
         // Even if a result handler throws: nothing stays pending, the clip is deleted.
