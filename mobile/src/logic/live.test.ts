@@ -187,6 +187,15 @@ describe("LiveController", () => {
     }
   });
 
+  it("doesn't re-measure a live jump that is far too long in the air to be one", async () => {
+    // ≈ 1.1 s in the air: a false alarm (someone walking out of the picture), not a jump.
+    const s = setup({ jumps: [{ tTakeoff: 4, height: 1.4 }], liveFps: 30 });
+    await s.run();
+    const long = s.logs.find((e) => (e.hLive as number) > 1);
+    expect(long).toMatchObject({ refined: false, reason: "not-refinable-or-before-clip" });
+    expect(s.results.find((m) => m.jump.hPrimary > 1)?.refined).toBe(false);
+  });
+
   it("works without recording (live results only)", async () => {
     const s = setup({ recordFails: true, liveFps: 30 });
     await s.run();
