@@ -45,6 +45,8 @@ export const BEFORE = 0.8;
 export const AFTER = 0.6;
 /** … plus this much on both sides, because the live↔recording time mapping is approximate. */
 export const PAD = 0.3;
+/** Longer in the air isn't a jump (≈ 1.2 m): not worth re-measuring, it only blocks the app. */
+export const MAX_FLIGHT = 1;
 /** Allowed takeoff mismatch between the live and the re-measured jump (seconds). */
 export const MATCH = 0.5;
 

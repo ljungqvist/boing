@@ -326,6 +326,7 @@ function Main() {
             onError={fail}
             onInfo={setInfo}
             keep={keepNow}
+            measureOnCpu={settings.measureOnCpu === true}
             onKeptClip={(id, name) => {
               // The clip's log entries are all in by now (the controller logs before it keeps the clip).
               const mine = entriesForClip(clipLogs.current, name);
@@ -450,6 +451,10 @@ function Main() {
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
           {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
+          <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
+            <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
+          </Pressable>
+          <Text style={s.hint}>For comparing the speed; applies from the next Start.</Text>
           {logs.length > 0 && (
             <>
               <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
