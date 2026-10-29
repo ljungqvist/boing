@@ -22,6 +22,11 @@ on:
 permissions:
   contents: write # publish the rolling release
 
+# Build number and commit: Android's version and the "Build" row in the app's settings (mobile/app.config.js).
+env:
+  EXPO_PUBLIC_BOING_BUILD: ${{ github.run_number }}
+  EXPO_PUBLIC_BOING_BRANCH: ${{ github.ref_name }}
+
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -43,6 +48,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+
+      - name: Short commit
+        run: echo "EXPO_PUBLIC_BOING_COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         working-directory: mobile
