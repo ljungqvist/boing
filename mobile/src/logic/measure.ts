@@ -45,6 +45,9 @@ export const BEFORE = 0.8;
 export const AFTER = 0.6;
 /** … plus this much on both sides, because the live↔recording time mapping is approximate. */
 export const PAD = 0.3;
+/** `PAD` once the recording's clock shift is known (`LiveOptions.shortWindow`): what's left is the
+ * live analysis's own error, ≈ ±0.05 s at 60 fps. */
+export const PAD_SHORT = 0.1;
 /** Longer in the air isn't a jump (≈ 1.2 m): not worth re-measuring, it only blocks the app. */
 export const MAX_FLIGHT = 1;
 /** Allowed takeoff mismatch between the live and the re-measured jump (seconds). */
