@@ -1,6 +1,7 @@
 #!/bin/sh
 # The upload server on Kapsi (server/kapsi/, https://ljungqvist.info/boing/).
 # Fetching and triaging uploads: the boing-uploads agent skill (one file at a time, not here).
+#   tools/kapsi.sh web      build the web app and publish it at https://ljungqvist.info/boing/
 #   tools/kapsi.sh test     run server/kapsi/test.sh on Kapsi (php is there, not on the Mac)
 #   tools/kapsi.sh deploy   copy server/kapsi/ to the web root; create the upload key if missing
 #   tools/kapsi.sh rotate   make a new upload key (old APKs can't upload until rebuilt; run key after)
@@ -16,6 +17,11 @@ case "${1:-}" in
     ssh "$HOST" "mkdir -p $WEB $DATA/uploads && chmod 700 $DATA &&
       { [ -s $DATA/upload-key ] || (umask 077; openssl rand -hex 24 > $DATA/upload-key); }"
     rsync -av --exclude test.sh "$REPO/server/kapsi/" "$HOST:$WEB/"
+    ;;
+  web)
+    (cd "$REPO" && npm run build)
+    ssh "$HOST" "mkdir -p $WEB"
+    rsync -av --delete --exclude index.php --exclude .htaccess "$REPO/dist/" "$HOST:$WEB/"
     ;;
   test)
     T=$(ssh "$HOST" mktemp -d)
