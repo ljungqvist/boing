@@ -1,2 +1,2 @@
 RewriteEngine On
-RewriteRule ^(upload|done|erase)$ index.php [L,QSA]
+RewriteRule ^(upload|done|erase|apk)$ index.php [L,QSA]

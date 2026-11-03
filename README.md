@@ -64,6 +64,8 @@ Two versions are published on GitHub Pages by `.github/workflows/pages.yml`:
 
 A push to either branch rebuilds and publishes both. A broken `dev` build never blocks
 `main`. Work goes to `dev` first and is merged into `main` when it's good.
+`tools/kapsi.sh web` also builds and publishes it at https://ljungqvist.info/boing/ (the
+APK links moved to `/boing/apk`). `boing.ljungqvist.info` has no DNS record.
 The pose models are downloaded from Google's MediaPipe model storage at runtime.
 
 ## Development
