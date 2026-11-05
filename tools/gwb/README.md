@@ -7,7 +7,7 @@ gwb (Debian, user `pl`, linger on) holds all Boing data in `~/boing-data` (moved
 phone ──PUT /upload, POST /done──▶ Kapsi (server/kapsi/) ◀──ssh every minute── gwb poll.sh
 phone ──POST /erase──────────────▶ Kapsi: deletes that phone's uploads, logs the request, mails the owner
 gwb poll.sh  (cron, no AI)   erase requests → tools/erase.py; complete sessions → ~/boing-data/uploads/
-                             (verbatim; oldest removed beyond 200 GB, sessions with a .keep file stay)
+                             (verbatim, kept: nothing is deleted for size, over 200 GB it only warns in poll.log)
 triage                       manual: the owner runs the boing-uploads skill when they want to. The
                              unattended tools/gwb/triage.sh (inbox → library) is no longer started.
 ```
@@ -34,3 +34,11 @@ The skill lives in `~/.agents/skills/boing-uploads/` (copied from the owner's Ma
 - `tail ~/boing-data/state/poll.log ~/boing-data/state/triage.log`
 - Waiting for the usage limit: `date -d @$(cat ~/boing-data/state/retry-after)`; remove the file to retry now.
 - Erase by hand: `python3 -I tools/erase.py <recording ID>`.
+
+## What is kept
+
+All consented footage stays in `~/boing-data/uploads/` (training data for later models; the consent
+allows 2 years). Triage deletes only unclothed children and sessions without consent. Each session gets
+`decisions/<session>.json` (verdict, tags, app reading and by-eye height per clip). `python3 -I
+tools/library/export_dataset.py` writes `~/boing-data/dataset.json`, a manifest of every clip with its
+decision, leaving out expired and erased sessions. Details: the `boing-uploads` skill.
