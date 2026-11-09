@@ -178,14 +178,24 @@ class Builder:
                                    "footwear": "socks (green)", "arms": "hands on hips", "light": "morning, indoor"},
                          "devices": {"app": "Samsung Galaxy S24+ (SM-S926B), front camera, 60 fps, 1080×1920"}})
 
-    # Uploads added by triage (boing-uploads skill): library/sources/<session>.json, same form as
-    # from_marks() takes. Data, not code, so gwb's triage can add jumps and tools/erase.py remove them.
+    # Sources are data, not code: app uploads use from_marks(); reviewed external videos provide
+    # complete entries, preserving their reference metric and uncertainty without inventing truth.
     def sources(self):
         d = os.path.join(self.lib, "sources")
         for f in sorted(os.listdir(d)) if os.path.isdir(d) else []:
             if f.endswith(".json"):
                 print(f"source {f}", flush=True)
-                self.from_marks(json.load(open(os.path.join(d, f))))
+                with open(os.path.join(d, f)) as source:
+                    spec = json.load(source)
+                if spec.get("kind") == "reviewed":
+                    self.jumps.extend(spec["jumps"])
+                else:
+                    self.from_marks(spec)
+        ids = set()
+        for entry in self.jumps:
+            if entry["id"] in ids:
+                raise ValueError(f"duplicate jump id: {entry['id']}")
+            ids.add(entry["id"])
 
     def from_marks(self, spec):
         """Jumps from an app upload with hand-marked edges.
