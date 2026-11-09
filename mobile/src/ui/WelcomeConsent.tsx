@@ -1,5 +1,5 @@
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import { ABOUT_URL, CONTACT, WELCOME_INTRO, WELCOME_TITLE, consentText } from "../logic/consent";
+import { ABOUT_URL, CONTACT, PRIVACY_URL, WELCOME_INTRO, WELCOME_TITLE, consentText } from "../logic/consent";
 import { C } from "./theme";
 import { Sheet } from "./Sheets";
 
@@ -17,6 +17,9 @@ export function WelcomeConsent({ phoneId, onAgree, onLater }: { phoneId: string;
       {consentText(phoneId).map((p, i) => (
         <Text key={i} style={s.text}>{p}</Text>
       ))}
+      <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)} accessibilityRole="link">
+        <Text style={s.link}>Privacy policy</Text>
+      </Pressable>
       <View style={s.choices}>
         <Pressable style={[s.button, s.secondary]} onPress={onLater} accessibilityRole="button">
           <Text style={s.secondaryText}>Not now</Text>

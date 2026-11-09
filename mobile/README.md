@@ -65,6 +65,28 @@ extract `app-release.aab` and upload it to Play Console. The action always uses
 the production package `info.ljungqvist.boing`, including when run from `dev`.
 It builds the same arm64 architecture as the APK action. It does not publish
 to Play or change the existing APK action or APK signing key.
+The Play version name is the app version (for example `0.1.1`); the numeric
+version code is the workflow input. The app's Build row still identifies the
+build number and source commit.
+
+After the signed AAB has been verified and uploaded to GitHub's artifacts, a
+separate job creates an annotated Git tag `v<app version>` on the exact source
+commit (for example `v0.1.2`). The tag message records the Play version code and
+build link. This uses GitHub's built-in token; no extra secret is needed.
+The build job retains read-only repository access; only the tagging job can
+write tags.
+
+Version tags must never be moved. The workflow checks for conflicts before
+building: rerunning the same source commit is allowed, but different source
+requires bumping `expo.version` in `mobile/app.json` and keeping the version in
+`mobile/package.json` and `mobile/package-lock.json` in sync. Choose a higher
+Play version code for each new upload. A failed build does not create a tag;
+if only tagging fails, the AAB remains available under Artifacts.
+
+The first two signed bundles were tagged retrospectively:
+
+- `v0.1.0`: `50f936e6567632a013ac5622287229e40a8fe560`, Play version code `1`.
+- `v0.1.1`: `48f056d59d2a4a600d5a743df7808e545b42f1b8`, Play version code `2`.
 
 Google Play signs the APKs it delivers to users. The AAB must first be signed
 with your **upload key**. For a new app, let Google generate the app signing key

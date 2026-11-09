@@ -20,6 +20,8 @@ jobs:
   bundle:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +52,13 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: mobile/package-lock.json
+
+      - name: Check release version tag
+        id: release
+        run: |
+          version=$(node -p "require('./mobile/app.json').expo.version")
+          bash mobile/scripts/tag-play-release.sh --check "$version" "$EXPO_PUBLIC_BOING_BUILD" "$GITHUB_SHA"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -92,3 +101,18 @@ jobs:
       - name: Remove upload keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/boing-upload.jks"
+
+  tag:
+    name: Tag the saved Play bundle
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Create immutable version tag
+        env:
+          RELEASE_VERSION: ${{ needs.bundle.outputs.version }}
+        run: bash mobile/scripts/tag-play-release.sh "$RELEASE_VERSION" "$EXPO_PUBLIC_BOING_BUILD" "$GITHUB_SHA"
