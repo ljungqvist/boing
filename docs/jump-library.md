@@ -77,6 +77,14 @@ Other people: their OK to keep the footage, a nickname only. Best truth: a secon
 side-on, 240 fps, socks or shoes with a colour that stands out from the floor (`tools/review/side_*`).
 Add a section to `build.py`, rebuild, check the edges by eye (`tools/library/edge_sheets.py`).
 
+Reviewed external videos can instead use `library/sources/<name>.json` with
+`{"kind": "reviewed", "jumps": [<complete jumps.json entries>]}`. The builder preserves these entries
+verbatim and rejects duplicate IDs. Keep source URLs, reuse status, frame annotations, timing
+assumptions and uncertainty with the entries. A manual **takeoff-to-apex** estimate belongs in
+`reference` with `metric: "takeoff-to-apex"`, `valueCm`, `rangeCm` and `approxTakeoffT`; it must not
+replace `truth.heightCm`, which the existing evaluation treats as flight-time height. Public
+demonstrations without an independent measurement remain estimates, not calibrated accuracy truth.
+
 ## Triage of uploads
 
 Done on gwb by the `boing-uploads` agent skill (`tools/gwb/README.md`): unattended, one session at a
