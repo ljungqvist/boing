@@ -3,8 +3,8 @@
 #   1. erase requests on Kapsi (consent withdrawn) → tools/erase.py for each recording ID
 #   2. complete sessions on Kapsi (uploads/<session>/.done) → ~/boing-data/uploads/<session>/ verbatim,
 #      file by file with a size check, then deleted on Kapsi
-#   3. uploads/ over $BOING_UPLOADS_MAX_GB (default 200): oldest sessions deleted first, except those
-#      with a `.keep` file. No triage: the owner runs the boing-uploads skill when they want to.
+#   3. uploads/ over $BOING_UPLOADS_MAX_GB (default 200): only a warning in the log, nothing deleted.
+#      No triage: the owner runs the boing-uploads skill when they want to.
 # Log: ~/boing-data/state/poll.log. Setup: tools/gwb/README.md.
 set -eu
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
@@ -66,11 +66,10 @@ for s in $(k "cd $K/uploads 2>/dev/null && for d in */.done; do [ -e \"\$d\" ] &
   fi
 done
 
-# 3. Size cap on uploads/ (a session with a .keep file is never removed).
+# 3. Size warning on uploads/. Nothing is deleted for size: the footage is training data. When over
+#    $BOING_UPLOADS_MAX_GB (default 200) it logs a warning once a day; the owner decides what to prune.
 max=$(( ${BOING_UPLOADS_MAX_GB:-200} * 1024 * 1024 ))
-while [ "$(du -sk "$DATA/uploads" | cut -f1)" -gt "$max" ]; do
-  old=$(for d in "$DATA"/uploads/[0-9]*/; do [ -e "${d}.keep" ] || echo "${d%/}"; done | sort | head -1)
-  [ -n "$old" ] || break
-  rm -rf "$old"
-  log "uploads over ${BOING_UPLOADS_MAX_GB:-200} GB: removed oldest ${old##*/}"
-done
+if [ "$(du -sk "$DATA/uploads" | cut -f1)" -gt "$max" ] && [ -z "$(find "$STATE/size-warned" -mtime -1 2>/dev/null)" ]; then
+  touch "$STATE/size-warned"
+  log "WARNING: uploads/ is over ${BOING_UPLOADS_MAX_GB:-200} GB; nothing is deleted automatically"
+fi

@@ -6,6 +6,8 @@ The recording ID is the phone's 12 hex character ID (mobile/src/logic/consent.ts
 named <session>_<ID>. Removes from boing-data:
   inbox/*_<ID>, uploads/*_<ID>          the sessions as fetched from Kapsi
   review/**/*_<ID>*                     triage's working files for those sessions
+  decisions/*_<ID>.json                 triage's per-session decisions
+  dataset.json                          export manifest (regenerate it)
   library/sources/*.json with phone=ID  the library's sources
   library jumps with phone=ID           their entries in jumps.json, clips (and .cut.json) and poses
 and appends what it removed to erase-log.jsonl. No rebuild needed: jumps.json is edited in place.
@@ -39,6 +41,8 @@ def erase(data, phone):
     for d in ("inbox", "uploads"):
         for p in sorted(glob.glob(os.path.join(data, d, f"*_{phone}"))):
             _remove(p, data, out)
+    for p in sorted(glob.glob(os.path.join(data, "decisions", f"*_{phone}.json"))):
+        _remove(p, data, out)
     for p in sorted(glob.glob(os.path.join(data, "review", "**", f"*_{phone}*"), recursive=True), key=len):
         _remove(p, data, out)
 
@@ -69,6 +73,8 @@ def erase(data, phone):
             with open(tmp, "w") as f:
                 json.dump(lib_json, f, indent=1, ensure_ascii=False)
             os.replace(tmp, jumps_file)
+
+    _remove(os.path.join(data, "dataset.json"), data, out)  # export manifest; regenerate with tools/library/export_dataset.py
 
     with open(os.path.join(data, "erase-log.jsonl"), "a") as f:
         at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
