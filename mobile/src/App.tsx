@@ -16,13 +16,14 @@ import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
-import { CONSENT_TITLE, CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId } from "./logic/consent";
+import { CONSENT_TITLE, CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId, shouldAskConsent } from "./logic/consent";
 import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, requestErase, saveSettings, startUploading, writeSession } from "./native/debug";
 import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
 import { JumpDetails, Row, Sheet } from "./ui/Sheets";
+import { WelcomeConsent } from "./ui/WelcomeConsent";
 import { C } from "./ui/theme";
 
 /** How long the latest height stays on top of the picture. */
@@ -102,6 +103,13 @@ function Main() {
   const [sendStatus, setSendStatus] = useState("");
   const [ask, setAsk] = useState<"consent" | "withdraw" | null>(null);
   const [eraseSent, setEraseSent] = useState(true);
+  /** The first-start consent popup (also when the consent text has changed). */
+  const [welcome, setWelcome] = useState(() => shouldAskConsent(settings));
+  const agree = () => updateSettings({ keep: true, consent: { version: CONSENT_VERSION, at: new Date().toISOString() }, consentAsked: CONSENT_VERSION });
+  const notNow = () => {
+    updateSettings({ consentAsked: CONSENT_VERSION });
+    setWelcome(false);
+  };
 
   // Recordings are sent as they come; at every start (and when switched on) whatever is still waiting
   // is handed to the upload service again, and the list of waiting jumps follows it.
@@ -445,6 +453,16 @@ function Main() {
           <Text selectable style={s.trace}>{crash}</Text>
         </Sheet>
       )}
+      {welcome && crash === "" && (
+        <WelcomeConsent
+          phoneId={phoneId}
+          onAgree={() => {
+            agree();
+            setWelcome(false);
+          }}
+          onLater={notNow}
+        />
+      )}
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
           <Row label="Build" value={BUILD} />
@@ -489,7 +507,7 @@ function Main() {
                 <Pressable
                   style={[s.wide, s.choice]}
                   onPress={() => {
-                    updateSettings({ keep: true, consent: { version: CONSENT_VERSION, at: new Date().toISOString() } });
+                    agree();
                     setAsk(null);
                   }}
                 >
