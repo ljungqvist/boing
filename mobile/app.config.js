@@ -9,6 +9,7 @@
 module.exports = ({ config }) => {
   const build = Number(process.env.EXPO_PUBLIC_BOING_BUILD) || 0;
   const dev = process.env.EXPO_PUBLIC_BOING_BRANCH === "dev";
+  const play = process.env.EXPO_PUBLIC_BOING_BRANCH === "play";
   let out = config;
   if (dev) {
     out = {
@@ -23,7 +24,7 @@ module.exports = ({ config }) => {
     const commit = process.env.EXPO_PUBLIC_BOING_COMMIT || "?";
     out = {
       ...out,
-      android: { ...out.android, versionCode: build, version: `${out.version} (build ${build}, ${commit})` },
+      android: { ...out.android, versionCode: build, version: play ? out.version : `${out.version} (build ${build}, ${commit})` },
     };
   }
   return out;

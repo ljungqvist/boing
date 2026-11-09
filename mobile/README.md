@@ -65,6 +65,9 @@ extract `app-release.aab` and upload it to Play Console. The action always uses
 the production package `info.ljungqvist.boing`, including when run from `dev`.
 It builds the same arm64 architecture as the APK action. It does not publish
 to Play or change the existing APK action or APK signing key.
+The Play version name is the app version (for example `0.1.1`); the numeric
+version code is the workflow input. The app's Build row still identifies the
+build number and source commit.
 
 Google Play signs the APKs it delivers to users. The AAB must first be signed
 with your **upload key**. For a new app, let Google generate the app signing key

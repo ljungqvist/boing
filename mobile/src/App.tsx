@@ -16,7 +16,7 @@ import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
-import { CONSENT_TITLE, CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId, shouldAskConsent } from "./logic/consent";
+import { CONSENT_TITLE, CONSENT_VERSION, PRIVACY_URL, consentText, hasConsent, hasRecordedConsent, isPhoneId, keepActive, newPhoneId, shouldAskConsent } from "./logic/consent";
 import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, requestErase, saveSettings, startUploading, writeSession } from "./native/debug";
 import { announce, announceFailure } from "./native/feedback";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
@@ -114,7 +114,10 @@ function Main() {
   // Recordings are sent as they come; at every start (and when switched on) whatever is still waiting
   // is handed to the upload service again, and the list of waiting jumps follows it.
   useEffect(() => {
-    if (!keep) return;
+    if (!keep) {
+      stopUploads();
+      return;
+    }
     if (Platform.OS === "android" && Number(Platform.Version) >= 33) {
       // Only for the "Uploading" notification; the upload runs without it.
       void PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(() => {});
@@ -150,7 +153,7 @@ function Main() {
     requestErase(DEFAULT_SERVER, old)
       .then(() => {
         updateSettings({ pendingErase: null });
-        setSendStatus("Consent withdrawn. Deletion requested: everything you sent is deleted within 30 days.");
+        setSendStatus("Consent withdrawn. Deletion requested: the developer's contribution copies are deleted within 30 days. Cloud review material follows the privacy policy.");
       })
       .catch(() => setSendStatus("Consent withdrawn. The deletion request is sent the next time Boing starts with a connection."));
   };
@@ -333,10 +336,11 @@ function Main() {
             onStep={(text) => setStatus({ text, tone: "idle" })}
             onError={fail}
             onInfo={setInfo}
-            keep={keepNow}
+            keep={keepNow && keep}
             measureOnCpu={settings.measureOnCpu === true}
             shortWindow={settings.shortWindow === true}
             onKeptClip={(id, name) => {
+              if (!keep) return;
               // The clip's log entries are all in by now (the controller logs before it keeps the clip).
               const mine = entriesForClip(clipLogs.current, name);
               clipLogs.current = clipLogs.current.filter((e) => !mine.includes(e));
@@ -500,6 +504,9 @@ function Main() {
               {consentText(phoneId).map((p, i) => (
                 <Text key={i} style={s.consent}>{p}</Text>
               ))}
+              <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)} accessibilityRole="link">
+                <Text style={[s.hint, { color: C.accent }]}>Privacy policy</Text>
+              </Pressable>
               <View style={s.choices}>
                 <Pressable style={[s.wide, s.choice, s.secondary]} onPress={() => setAsk(null)}>
                   <Text style={s.secondaryText}>Disagree</Text>
@@ -523,7 +530,7 @@ function Main() {
               </Text>
               <Pressable style={s.check} onPress={() => setEraseSent(!eraseSent)}>
                 <Text style={s.checkBox}>{eraseSent ? "☑" : "☐"}</Text>
-                <Text style={s.consent}>Also delete everything I've already sent (recording ID {phoneId})</Text>
+                <Text style={s.consent}>Also request deletion of earlier contributions (recording ID {phoneId})</Text>
               </Pressable>
               <View style={s.choices}>
                 <Pressable style={[s.wide, s.choice, s.secondary]} onPress={() => setAsk(null)}>
@@ -561,7 +568,7 @@ function Main() {
             </>
           )}
           {sendStatus !== "" && <Text style={s.hint}>{sendStatus}</Text>}
-          {hasConsent(settings) && ask === null && (
+          {hasRecordedConsent(settings) && ask === null && (
             <Pressable onPress={() => { setEraseSent(true); setAsk("withdraw"); }}>
               <Text style={[s.hint, { color: C.accent }]}>Withdraw consent · recording ID {phoneId}</Text>
             </Pressable>
@@ -580,6 +587,9 @@ function Main() {
           </Text>
           <Pressable onPress={() => void Linking.openURL("https://github.com/ljungqvist/boing")}>
             <Text style={[s.hint, { color: C.accent }]}>About Boing</Text>
+          </Pressable>
+          <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)} accessibilityRole="link">
+            <Text style={[s.hint, { color: C.accent }]}>Privacy policy</Text>
           </Pressable>
         </Sheet>
       )}
