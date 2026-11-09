@@ -1,0 +1,95 @@
+name: Build Play Store bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "Play version code (positive integer, higher than every previous Play upload)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  EXPO_PUBLIC_BOING_BUILD: ${{ inputs.version_code }}
+  # A Play build always uses info.ljungqvist.boing, even when built from dev.
+  EXPO_PUBLIC_BOING_BRANCH: play
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      BOING_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/boing-upload.jks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check inputs and restore upload key
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          BOING_UPLOAD_KEY: ${{ secrets.BOING_UPLOAD_KEY }}
+        run: |
+          if [[ ! "$EXPO_PUBLIC_BOING_BUILD" =~ ^[1-9][0-9]{0,9}$ ]] || (( EXPO_PUBLIC_BOING_BUILD > 2100000000 )); then
+            echo "::error::version_code must be an integer between 1 and 2100000000."
+            exit 1
+          fi
+          for name in ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_STORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD BOING_UPLOAD_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository secret: $name. See mobile/README.md (Google Play bundle)."
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$BOING_ANDROID_KEYSTORE_PATH"
+          echo "EXPO_PUBLIC_BOING_COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate Android project with upload signing
+        working-directory: mobile
+        run: |
+          npx expo prebuild --platform android --clean
+          cat scripts/play-signing.gradle >> android/app/build.gradle
+
+      - name: Build signed release bundle
+        working-directory: mobile/android
+        env:
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          EXPO_PUBLIC_BOING_UPLOAD_KEY: ${{ secrets.BOING_UPLOAD_KEY }}
+        run: ./gradlew bundleRelease -PreactNativeArchitectures=arm64-v8a "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g"
+
+      - name: Verify bundle signature
+        run: |
+          bundle=mobile/android/app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify "$bundle" | tee "$RUNNER_TEMP/bundle-signature.txt"
+          grep -q 'jar verified\.' "$RUNNER_TEMP/bundle-signature.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boing-play-aab-${{ inputs.version_code }}
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove upload keystore
+        if: always()
+        run: rm -f "$BOING_ANDROID_KEYSTORE_PATH"

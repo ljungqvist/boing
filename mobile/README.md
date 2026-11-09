@@ -55,6 +55,61 @@ Each CI build is numbered (the workflow's run number) and carries its commit: th
 diagnostics start with it. Local builds say "local".
 For development with hot reload: `npx expo run:android` (debug build + Metro).
 
+### Google Play bundle (AAB)
+
+Actions → **Build Play Store bundle** → **Run workflow** builds a signed AAB.
+Choose the source branch and a version code: start at `1` for a new Play app,
+then use a higher code than every previous Play upload. Download
+`boing-play-aab-<version_code>` from the completed run's **Artifacts** section;
+extract `app-release.aab` and upload it to Play Console. The action always uses
+the production package `info.ljungqvist.boing`, including when run from `dev`.
+It builds the same arm64 architecture as the APK action. It does not publish
+to Play or change the existing APK action or APK signing key.
+
+Google Play signs the APKs it delivers to users. The AAB must first be signed
+with your **upload key**. For a new app, let Google generate the app signing key
+in Play Console; the key signing your first uploaded bundle becomes the upload
+key. For an existing Play app, use its registered upload key instead of creating
+a replacement. See [Android's signing guide](https://developer.android.com/studio/publish/app-signing).
+
+For a new app, create the upload key locally, outside this public repository:
+
+```sh
+mkdir -p "$HOME/code/boing-play-store/signing"
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+"$JAVA_HOME/bin/keytool" -genkeypair -v -storetype JKS \
+  -keystore "$HOME/code/boing-play-store/signing/boing-upload.jks" \
+  -alias boing-upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+The command prompts for passwords and certificate details. Keep the keystore
+and passwords backed up privately. Add these repository secrets under
+**Settings → Secrets and variables → Actions → New repository secret**:
+
+- `ANDROID_UPLOAD_KEYSTORE_BASE64`: the Base64-encoded keystore.
+- `ANDROID_UPLOAD_STORE_PASSWORD`: the keystore password.
+- `ANDROID_UPLOAD_KEY_ALIAS`: `boing-upload` (or your existing alias).
+- `ANDROID_UPLOAD_KEY_PASSWORD`: the key password; if you accepted the default
+  during creation, this is the same as the keystore password.
+
+With GitHub CLI signed in, upload the encoded keystore without writing a text
+copy or printing it:
+
+```sh
+base64 < "$HOME/code/boing-play-store/signing/boing-upload.jks" | \
+  gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --repo ljungqvist/boing
+```
+
+The existing `BOING_UPLOAD_KEY` secret is also required so the Play build can
+send consented recordings. The workflow checks all five secrets before building,
+decodes the keystore into the runner's temporary directory, signs and verifies
+the bundle, uploads only the AAB artifact, and removes the temporary keystore.
+See [GitHub's secret setup guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets).
+
+GitHub requires a manually triggered workflow to be present on the default
+branch before it appears in the Actions workflow list. Once available, select
+the desired source branch in **Run workflow**.
+
 ## iOS
 
 Needs iPadOS/iOS 16.4 or later (Expo SDK 57). Built and tested in CI on a macOS runner
