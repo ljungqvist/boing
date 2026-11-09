@@ -1,0 +1,19 @@
+
+// Appended to the generated app/build.gradle only by android-bundle.yml.
+// Existing APK builds continue using the Expo template's debug signing key.
+// Read credentials at Gradle execution time; never embed them in Expo config/JS.
+android {
+    signingConfigs {
+        playUpload {
+            storeFile file(System.getenv('BOING_ANDROID_KEYSTORE_PATH'))
+            storePassword System.getenv('ANDROID_UPLOAD_STORE_PASSWORD')
+            keyAlias System.getenv('ANDROID_UPLOAD_KEY_ALIAS')
+            keyPassword System.getenv('ANDROID_UPLOAD_KEY_PASSWORD')
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.playUpload
+        }
+    }
+}
