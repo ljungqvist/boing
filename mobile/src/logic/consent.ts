@@ -3,9 +3,10 @@
  * the current text. Bump CONSENT_VERSION whenever CONSENT_TEXT changes; the app then asks again.
  */
 
-export const CONSENT_VERSION = 2;
+export const CONSENT_VERSION = 3;
 
 export const CONTACT = "boing@ljungqvist.info";
+export const PRIVACY_URL = "https://ljungqvist.info/boing/privacy/";
 
 export const CONSENT_TITLE = "Send recordings to the developer?";
 
@@ -15,14 +16,25 @@ export function consentText(phoneId: string): string[] {
     "When this is on, Boing records each measured jump, with pose and motion data (body positions, " +
       "accelerometer, gyroscope), and sends it to the developer automatically right after the jump, in the " +
       "background, also over mobile data. A jump's video is typically 50-100 MB. A jump that can't be sent " +
-      "stays on the phone and is sent later.",
+      "stays on the phone and is sent later. Agreeing also allows any recordings already waiting on " +
+      "this phone to be sent under these terms.",
     `Who: Petter Ljungqvist, Finland (${CONTACT}). Why: to test and improve the height measurement. ` +
-      "Recordings are stored on the developer's own computers in Finland, not published and not shared " +
-      "with anyone. They're kept at most 2 years; deleted data also disappears from backups as they're " +
-      "replaced.",
+      "The developer's copies are stored in Finland, are not published, and are kept at most 2 years. " +
+      "Deleted data also disappears from backups as they're replaced.",
+    "The developer may send videos, extracted frames and related pose, motion or measurement data to " +
+      "Anthropic's Claude services, including Claude Code, to help review jumps and improve Boing. " +
+      "Anthropic and its service providers may process this material outside Finland and the European " +
+      "Economic Area, including in the United States.",
+    "Anthropic's retention and model training rules depend on the account terms and settings used. " +
+      "The developer's 2-year limit does not cover cloud copies. On personal Claude accounts, enabling " +
+      "model improvement can allow de-identified material to be kept for up to 5 years for model training. " +
+      "The privacy policy explains these differences and deletion limits.",
     "Only record people who agree, and children only with a parent's permission.",
-    `You can withdraw at any time in this menu and have everything you've sent deleted, or write to ${CONTACT}. ` +
+    `You can withdraw at any time in this menu and request deletion, or write to ${CONTACT}. ` +
+      "The developer will delete their contribution copies and take available steps to remove cloud " +
+      "review material. Provider exceptions apply, and deletion cannot undo model training already completed. " +
       `Your recording ID: ${phoneId}.`,
+    `Privacy policy: ${PRIVACY_URL}`,
     "Saying no changes nothing else in the app.",
   ];
 }
@@ -34,14 +46,21 @@ export const WELCOME_INTRO: string[] = [
   "Boing is a free, open-source project made by one person. The more real jumps it can learn from, " +
     "on different phones, lighting and jumping styles, the more accurate it gets for everyone.",
   "If you agree, each measured jump is sent in the background as a short video with pose and motion " +
-    "data. You'd be directly helping to test and improve the height measurement. Thank you!",
+    "data. The developer may review it with help from Anthropic's Claude services, as explained below. " +
+    "You'd be directly helping to test and improve the height measurement. Thank you!",
   "It's completely optional, and Boing works exactly the same if you say no. You can change your mind at " +
-    "any time in Settings → Debug recordings, and have everything you've sent deleted.",
+    "any time in Settings → Debug recordings, and request deletion of your contributions.",
 ];
 
 export const ABOUT_URL = "https://github.com/ljungqvist/boing";
 
 export type Consent = { version: number; at: string };
+
+/** Keep withdrawal and the recording ID accessible even when old consent needs renewing. */
+export function hasRecordedConsent(settings: Record<string, unknown>): boolean {
+  const c = settings.consent as Partial<Consent> | undefined;
+  return typeof c === "object" && c !== null && typeof c.version === "number" && Number.isInteger(c.version) && c.version > 0;
+}
 
 /** A random recording ID for this phone: 12 lowercase hex characters. */
 export function newPhoneId(rand: () => number = Math.random): string {

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How Boing handles camera recordings, optional uploads, cloud-assisted review, retention and deletion requests.">
+  <title>Boing privacy policy</title>
+  <link rel="canonical" href="https://ljungqvist.info/boing/privacy/">
+  <style>
+    :root { color-scheme: dark; --bg: #0e0e10; --surface: #19191d; --text: #f4f4f5; --muted: #b5b5bf; --accent: #ff7a1a; --line: #37373f; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.7 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width: 790px; margin: auto; padding: 48px 24px 72px; }
+    .brand { color: var(--accent); font-weight: 750; font-size: 23px; letter-spacing: -.03em; text-decoration: none; }
+    h1 { font-size: clamp(2.1rem, 7vw, 3.1rem); line-height: 1.15; letter-spacing: -.04em; margin: 28px 0 12px; }
+    h2 { font-size: 1.35rem; line-height: 1.35; margin: 36px 0 10px; scroll-margin-top: 24px; }
+    p { margin: 12px 0; }
+    a { color: #ffa460; text-underline-offset: 3px; overflow-wrap: anywhere; }
+    a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .date, footer { color: var(--muted); }
+    .summary { background: var(--surface); border-left: 3px solid var(--accent); padding: 14px 22px; margin: 26px 0; border-radius: 0 10px 10px 0; }
+    ul { padding-left: 24px; }
+    li { margin: 9px 0; }
+    code { font: .94em ui-monospace, monospace; overflow-wrap: anywhere; }
+    footer { border-top: 1px solid var(--line); padding-top: 24px; margin-top: 40px; font-size: .9rem; }
+    @media print { :root { --bg: white; --text: black; --muted: #444; --surface: #f5f5f5; --accent: #9d4000; } main { padding: 0; max-width: none; } a { color: #733300; } }
+  </style>
+</head>
+<body>
+<main>
+  <a class="brand" href="/boing/">Boing</a>
+  <h1>Privacy policy</h1>
+  <p class="date">Boing: Jump Height (Beta) · Last updated <time datetime="2026-11-09">9 November 2026</time></p>
+
+  <div class="summary" aria-label="Privacy at a glance">
+    <p><strong>Jump measurement runs on your device.</strong> Sending recordings to the developer is optional. If you choose to contribute, videos and related data help test and improve Boing. Review can involve cloud AI services.</p>
+    <p>You can stop sharing and request deletion. Contact <a href="mailto:boing@ljungqvist.info">boing@ljungqvist.info</a> with privacy questions or requests.</p>
+  </div>
+
+  <h2 id="controller">1. Who is responsible</h2>
+  <p>Boing is developed and operated by <strong>Petter Ljungqvist, Finland</strong>, the controller responsible for the personal data described in this policy. This policy covers the Boing mobile app and its recording-upload service at <code>ljungqvist.info/boing</code>.</p>
+  <p>Contact: <a href="mailto:boing@ljungqvist.info">boing@ljungqvist.info</a>.</p>
+
+  <h2 id="device">2. Using Boing on your device</h2>
+  <p>Boing uses camera images, temporary video recordings and body-position estimates to calculate jump height on your device. Videos you select for analysis are also processed on your device. You can measure jumps without contributing recordings to the developer.</p>
+  <p>The app stores settings, your sharing choice and a randomly generated recording ID locally. The recording ID is a pseudonymous identifier, not a hardware serial number. Shared videos may show identifiable people, so contributed recordings are not anonymous.</p>
+  <p>The Android app requests camera permission and does not request microphone permission. Spoken height results use your device’s text-to-speech service and its voice settings.</p>
+
+  <h2 id="uploads">3. Optional recording contributions</h2>
+  <p>If you enable recording contributions after reading the in-app consent information, Boing sends each measured jump’s recording automatically to the developer in the background. Uploads can use mobile data. A jump video is typically 50–100 MB. Unsent contributions remain on the device for later retry; successfully sent contributions are removed from the upload queue on the device.</p>
+  <p>A contribution can include:</p>
+  <ul>
+    <li>The jump video, including people and surroundings visible in it, and frames or clips derived during review.</li>
+    <li>Body-position estimates, including positions of the nose, shoulders, hips, knees, ankles, heels and toes, with frame timings and tracking confidence.</li>
+    <li>Accelerometer and gyroscope measurements around the jump.</li>
+    <li>Jump-height estimates, measurement timings, diagnostic messages, errors and quality flags.</li>
+    <li>Device, operating-system, app-build and camera information, such as camera direction, frame rate and image dimensions.</li>
+    <li>The random recording ID, session timestamps and the version and time of your consent.</li>
+  </ul>
+
+  <h2 id="purpose">4. Why data is used</h2>
+  <p>Contributed recordings are used to inspect measurements, find errors, build private evaluation datasets, and test and improve Boing’s jump-measurement methods, including developing improved models. Ordinary jumps and incorrect or rejected measurements can both be useful.</p>
+  <p>Optional recording contributions and their review rely on your consent. Basic network and security records are used on the basis of legitimate interests in operating and protecting the service. Information you send by email is used to answer you and handle your request, including meeting applicable data-protection obligations.</p>
+  <p>Boing does not include advertising or advertising trackers. The developer does not sell contributed recordings or publish them as part of the public source-code repository or store listing.</p>
+
+  <h2 id="providers">5. Hosting, cloud review and other services</h2>
+  <p>Contributions first pass through the upload service hosted by the Finnish association <a href="https://www.kapsi.fi/">Kapsi Internet-käyttäjät ry</a>. Completed uploads are transferred to the developer’s computers in Finland and removed from the receiving server after transfer.</p>
+  <p id="cloud-details"><strong>Anthropic’s Claude services, including Claude Code, may be used to review contributed footage.</strong> Videos, extracted frames and related pose, motion or measurement information may be submitted to Anthropic to help inspect jumps, identify errors and improve Boing. This means contributed material can leave the developer’s computers and be processed by Anthropic and its service providers.</p>
+  <p>Cloud processing may take place outside Finland and the European Economic Area, including in the United States. Anthropic describes its international-transfer safeguards, including standard contractual clauses where applicable, in its <a href="https://www.anthropic.com/legal/privacy">Privacy Policy</a>. Contact the developer if you need more information about processing of a particular contribution.</p>
+  <p>Anthropic’s handling of submitted material depends on the product, account terms and settings used for review. Personal Claude accounts and commercial/API accounts have different rules for retention and model improvement. This policy does not promise that cloud copies are stored only in Finland, that they follow the developer’s two-year retention limit, or that all account types exclude provider model training. See the retention information below.</p>
+  <p>Boing downloads MediaPipe model files from Google-hosted storage when needed and caches them on the device. Google receives the network requests needed to deliver those files, including the requesting IP address. Jump analysis runs locally. Google’s handling of service requests is described in its <a href="https://policies.google.com/privacy">privacy policy</a>.</p>
+  <p>The web server receives connection information such as IP address, request time, requested address and technical request details when you visit this page or contact the upload service. Standard hosting access and error logs may contain this information. This policy page does not set advertising cookies or load analytics scripts.</p>
+  <p>If you choose to share diagnostics using another app or email the developer, the services you choose also handle that communication under their own terms.</p>
+
+  <h2 id="retention">6. Retention</h2>
+  <p>The developer keeps contributed recordings and associated pose, motion and measurement data under the developer’s control for <strong>at most two years from the recording session</strong>, unless deleted earlier following a request. This includes private evaluation copies and local review material. Deleted material also disappears from backups as those backups are replaced.</p>
+  <p>Minimal deletion records, such as the recording ID and date of an erasure request, are kept to honour deletion requests and prevent erased recordings from being reintroduced. They do not contain the jump videos. Security logs and correspondence are retained only as needed to operate the service, resolve problems and document requests.</p>
+  <p id="provider-retention"><strong>Cloud copies have separate retention rules.</strong> For personal Claude accounts, Anthropic says saved conversations can be deleted and are normally removed from its backend within 30 days after deletion, subject to exceptions. If its model-improvement setting is enabled, Anthropic may retain de-identified material in its training systems for up to five years; deleting a conversation does not undo training already completed. See <a href="https://privacy.claude.com/en/articles/10023548-how-long-do-you-store-my-data">Anthropic’s personal-account retention information</a>.</p>
+  <p>For commercial/API use, different contractual rules apply. Anthropic describes standard API deletion within 30 days, with exceptions, and different retention for saved conversations or files. See its <a href="https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data">commercial retention information</a> and <a href="https://www.anthropic.com/legal/commercial-terms">Commercial Terms</a>. These provider rules are distinct from Boing’s local retention limit.</p>
+
+  <h2 id="choices">7. Stop sharing or request deletion</h2>
+  <p>You can stop future uploads in the app’s menu under <strong>Debug recordings</strong>. To withdraw consent and request deletion of recordings already sent, choose <strong>Withdraw consent</strong> and leave the option to delete earlier contributions selected. Turning off uploads alone does not delete recordings already received.</p>
+  <p>Alternatively, email <a href="mailto:boing@ljungqvist.info">boing@ljungqvist.info</a>. Include your recording ID from the app menu when possible, so the developer can locate the contributions. If you no longer have the ID, explain what information you have that could help identify them.</p>
+  <p>The app deletes unsent contributions when you withdraw consent. A deletion request that cannot be sent because the device is offline is retried when Boing next starts with a connection. Received requests are handled promptly; the app provides for deletion of the developer-controlled contribution copies within 30 days. Backup copies are removed as backups are replaced.</p>
+  <p>When handling an erasure request, the developer also takes the available steps to delete associated cloud review material or request its removal from Anthropic. Provider deletion rules and exceptions described above apply; erasure cannot necessarily undo model training already completed.</p>
+  <p>You can continue measuring jumps without contributing recordings. Withdrawing consent does not affect processing that was lawful before withdrawal.</p>
+
+  <h2 id="rights">8. Your data-protection rights</h2>
+  <p>Depending on the circumstances, you may request access to your personal data, correction, erasure, restriction of processing or portability of data provided with consent. You may withdraw consent and object to processing based on legitimate interests. Contact the developer at the address above to exercise these rights; requests are normally answered within one calendar month.</p>
+  <p>You may complain to the <a href="https://tietosuoja.fi/en/notification-to-the-data-protection-ombudsman">Office of the Data Protection Ombudsman in Finland</a> or the competent supervisory authority where you live.</p>
+
+  <h2 id="people">9. People in recordings and children</h2>
+  <p>Record only people who agree to be filmed. Record children only with a parent’s or legal guardian’s permission. The person using Boing is responsible for obtaining the necessary permission from the people they record.</p>
+  <p>If you are a parent or guardian and believe a child’s recording was contributed without appropriate permission, contact the developer to request its removal.</p>
+
+  <h2 id="security">10. Security</h2>
+  <p>Recording uploads use HTTPS. The developer restricts access to contributed recordings and uses them for the purposes described above. As with any internet service, no transmission or storage method can be guaranteed completely secure.</p>
+
+  <h2 id="changes">11. Changes to this policy</h2>
+  <p>This page may be updated as Boing develops. The date above identifies the latest revision. Changes that require new consent must be presented through the app’s consent flow before the newly described processing takes place.</p>
+
+  <footer>Boing · Petter Ljungqvist, Finland · <a href="mailto:boing@ljungqvist.info">boing@ljungqvist.info</a></footer>
+</main>
+</body>
+</html>
