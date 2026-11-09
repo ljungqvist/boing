@@ -27,6 +27,20 @@ export function consentText(phoneId: string): string[] {
   ];
 }
 
+/** The first-start popup: the pitch (the consent text itself follows it, see consentText). */
+export const WELCOME_TITLE = "Help make Boing better";
+
+export const WELCOME_INTRO: string[] = [
+  "Boing is a free, open-source project made by one person. The more real jumps it can learn from, " +
+    "on different phones, lighting and jumping styles, the more accurate it gets for everyone.",
+  "If you agree, each measured jump is sent in the background as a short video with pose and motion " +
+    "data. You'd be directly helping to test and improve the height measurement. Thank you!",
+  "It's completely optional, and Boing works exactly the same if you say no. You can change your mind at " +
+    "any time in Settings → Debug recordings, and have everything you've sent deleted.",
+];
+
+export const ABOUT_URL = "https://github.com/ljungqvist/boing";
+
 export type Consent = { version: number; at: string };
 
 /** A random recording ID for this phone: 12 lowercase hex characters. */
@@ -44,6 +58,14 @@ export function isPhoneId(x: unknown): x is string {
 export function hasConsent(settings: Record<string, unknown>): boolean {
   const c = settings.consent as Partial<Consent> | undefined;
   return typeof c === "object" && c !== null && c.version === CONSENT_VERSION;
+}
+
+/**
+ * Show the first-start popup: no valid consent, and not yet asked for this version of the text.
+ * A person who said "Not now" (or withdrew) isn't asked again until CONSENT_VERSION changes.
+ */
+export function shouldAskConsent(settings: Record<string, unknown>): boolean {
+  return !hasConsent(settings) && settings.consentAsked !== CONSENT_VERSION;
 }
 
 /** Recordings are kept: switched on and agreed to the current text. */
