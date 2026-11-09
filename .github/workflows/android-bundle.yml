@@ -20,8 +20,6 @@ jobs:
   bundle:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      BOING_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/boing-upload.jks
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +42,7 @@ jobs:
             fi
           done
           umask 077
-          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$BOING_ANDROID_KEYSTORE_PATH"
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/boing-upload.jks"
           echo "EXPO_PUBLIC_BOING_COMMIT=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
@@ -71,6 +69,7 @@ jobs:
       - name: Build signed release bundle
         working-directory: mobile/android
         env:
+          BOING_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/boing-upload.jks
           ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
           ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
@@ -92,4 +91,4 @@ jobs:
 
       - name: Remove upload keystore
         if: always()
-        run: rm -f "$BOING_ANDROID_KEYSTORE_PATH"
+        run: rm -f "$RUNNER_TEMP/boing-upload.jks"
