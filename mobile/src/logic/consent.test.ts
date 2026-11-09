@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId, uploadFolder } from "./consent";
+import { CONSENT_VERSION, consentText, hasConsent, isPhoneId, keepActive, newPhoneId, shouldAskConsent, uploadFolder } from "./consent";
 
 describe("consent", () => {
   it("makes 12 hex character phone IDs", () => {
@@ -39,5 +39,13 @@ describe("consent", () => {
     const t = consentText("0123456789ab").join("\n");
     expect(t).toContain("0123456789ab");
     expect(t).toContain("boing@ljungqvist.info");
+  });
+
+  it("asks at first start, and again only when the consent version changes", () => {
+    expect(shouldAskConsent({})).toBe(true);
+    expect(shouldAskConsent({ consentAsked: CONSENT_VERSION })).toBe(false); // said "Not now" / withdrew
+    expect(shouldAskConsent({ consentAsked: CONSENT_VERSION - 1 })).toBe(true); // text changed since
+    expect(shouldAskConsent({ consent: { version: CONSENT_VERSION, at: "x" } })).toBe(false);
+    expect(shouldAskConsent({ consent: { version: CONSENT_VERSION - 1, at: "x" } })).toBe(true);
   });
 });
