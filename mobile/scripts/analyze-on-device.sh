@@ -3,7 +3,7 @@
 # and print the app's result (JSON). The video is served over HTTP from this computer; the app
 # downloads it (apps can't read files pushed with adb). The pose model downloads on first use.
 #
-#   scripts/analyze-on-device.sh ../../data/own/20261013_174604.mp4 [timeout seconds]
+#   scripts/analyze-on-device.sh <video.mp4> [timeout seconds]
 #
 # Works for the emulator and for a phone on USB: `adb reverse` makes the computer's port reachable
 # as localhost on the device.

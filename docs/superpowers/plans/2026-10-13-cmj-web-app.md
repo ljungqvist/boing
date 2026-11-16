@@ -8,7 +8,7 @@
 
 **Tech Stack:** Vite, TypeScript, `@mediapipe/tasks-vision`, Vitest, Playwright (Google Chrome channel, fake camera) for an end-to-end test.
 
-**Spec:** `docs/superpowers/specs/2026-10-13-cmj-web-prototype-design.md`, evaluation: `docs/evaluation/2026-10-13-first-evaluation.md`
+**Spec:** `docs/superpowers/specs/2026-10-13-cmj-web-prototype-design.md`
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - Every analysed frame uses its real timestamp (`requestVideoFrameCallback` metadata), never the wall clock at processing time.
 - Height shown first: takeoff→apex (`hPrimary`); flight-time height (`hFlight`) shown second.
 - Camera at any angle; the implied-g check uses the widened bounds (4–20 m/s²).
-- Slow-motion uploads: time scale from `com.android.capture.fps`, applied only when the shortest frame gaps are > 1.5/capture fps (same rule as `tools/extract_pose.py`).
+- Slow-motion uploads: time scale from `com.android.capture.fps`, applied only when the shortest frame gaps are > 1.5/capture fps.
 - Live mode uses the `full` model; file mode uses `heavy`.
 - Phones need HTTPS: the dev server runs with a self-signed certificate (`--host`).
 

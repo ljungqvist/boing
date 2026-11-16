@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { DATA } from "../playwright.config";
 
-// Fake camera: own recording with two jumps (60 fps), looping.
-const Y4M = resolve(DATA, "e2e", "own-two-jumps.y4m");
+// Fake camera: a recording with two jumps (60 fps), looping.
+const Y4M = resolve(DATA, "two-jumps.y4m");
 test.use({
   launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${Y4M}`] },
 });
@@ -20,7 +20,7 @@ const show = (rs: Result[]) =>
     `frames ${r.framesLive}→${r.framesRefined} @${r.fps.toFixed(0)} fps`);
 
 test.beforeEach(async ({ page }) => {
-  test.skip(!existsSync(Y4M), "fake camera file missing (tools/make_y4m.py own/20261013_174604.mp4)");
+  test.skip(!existsSync(Y4M), "fake camera clip two-jumps.y4m missing (tools/make_y4m.py)");
   page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") console.log("[browser]", m.text()); });
 });
 

@@ -96,20 +96,8 @@ tools/
 
 ### Test videos
 
-Stored outside the repo in `../data/` (third-party content, not committed).
-The repo holds a manifest `testdata/videos.json` with id, source URL, view,
-fps, arm technique (`hips` | `free` | `bar`) and any reference values.
-
-| Video | View | fps | Arms | Notes |
-|---|---|---|---|---|
-| instagram `DRLgnAQlI8y` | front, handheld | 30 | hips | 6 jumps with reference values (24.7, 25.9, 24.9 / 25.1, 25.3, 27.0; unit unknown); likely speed ramps, moving camera |
-| youtube `x-1aKYUhd_k` | front, static | 30 | hips | ideal case |
-| youtube `DZV_RlzfSIY` | side, static | 30 | hips | several jumps |
-| youtube `0NWWXm8jg6g` | front, static, force plate | 25 | bar | loaded CMJ |
-| youtube `ElIb8VBrjLM` | front, static | 30 | free | arm swing |
-| youtube `3u1uz8ghdk0` | oblique, contact mat | 30 | hips + free | results maybe on screen |
-| youtube `09yR5a4u-6A` | side | 50 | free | |
-| youtube `A7GeA3lBpg8` | side, several people | 50 | free | |
+Public front- and side-view jump videos (third-party content, not committed), at 25–50 fps,
+with hands on hips, free arm swing and a barbell.
 
 Arm-swing (`free`) videos are a reference for the flight-time result and must
 trigger the quality checks rather than produce a silently wrong primary height.

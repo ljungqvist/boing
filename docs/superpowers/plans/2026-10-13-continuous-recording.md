@@ -8,7 +8,7 @@
 
 **Tech Stack:** existing Vite + TypeScript app, `MediaRecorder`, `requestVideoFrameCallback`, MediaPipe tasks-vision, Vitest, Playwright (Google Chrome, fake camera).
 
-**Spec / context:** `docs/superpowers/specs/2026-10-13-cmj-web-prototype-design.md`, `docs/evaluation/2026-10-13-first-evaluation.md`. Motivation: a real phone (Android 10, Chrome) analysed only ~13 fps live → 7–8 frames in the air → jumps rejected as `few-frames`, and the accepted one over-estimated (session `../data/sessions/2026-10-13T18-20.json`, replay with `npx tsx tools/replay.ts`).
+**Spec / context:** `docs/superpowers/specs/2026-10-13-cmj-web-prototype-design.md`. Motivation: a real phone (Android 10, Chrome) analysed only ~13 fps live → 7–8 frames in the air → jumps rejected as `few-frames`, and the accepted one over-estimated (a saved phone session, replayed with `npx tsx tools/replay.ts`).
 
 ## Global Constraints
 
@@ -94,7 +94,7 @@
 
 ### Task 6: End-to-end tests
 
-**Files:** `e2e/refine.spec.ts` (fake camera `../data/e2e/own-two-jumps.y4m`)
+**Files:** `e2e/refine.spec.ts` (fake camera `two-jumps.y4m`)
 
 - [ ] Normal speed: ≥ 3 jumps, all `refined`, `framesRefined ≥ framesLive`, heights 20–36 cm (the fake camera delivers ~3–9 % slow, which inflates heights a bit; that's a test-rig artefact).
 - [ ] Slow phone: `/?delegate=cpu&model=full` + CDP `Emulation.setCPUThrottlingRate` 4–6 → live frames drop. Refined results must still appear with `framesRefined` close to the recorded frame count (≥ 0.8 × fps × air time).

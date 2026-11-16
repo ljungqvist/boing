@@ -56,7 +56,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
   const model = useRef<string | null>(null);
-  /** Model for re-measuring jumps from the recording: heavy (steadier feet, see docs/evaluation). */
+  /** Model for re-measuring jumps from the recording: heavy (steadier feet). */
   const measureModel = useRef<string | null>(null);
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
   const cameraRef = useRef<CameraRef>(null);

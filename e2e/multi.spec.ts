@@ -3,14 +3,14 @@ import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { DATA } from "../playwright.config";
 
-// Fake camera: own recording with two jumps (60 fps), looping.
-const Y4M = resolve(DATA, "e2e", "own-two-jumps.y4m");
+// Fake camera: a recording with two jumps (60 fps), looping.
+const Y4M = resolve(DATA, "two-jumps.y4m");
 test.use({
   launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${Y4M}`] },
 });
 
 test("live camera: keeps measuring after the first jump", async ({ page }) => {
-  test.skip(!existsSync(Y4M), "fake camera file missing (tools/make_y4m.py own/20261013_174604.mp4)");
+  test.skip(!existsSync(Y4M), "fake camera clip two-jumps.y4m missing (tools/make_y4m.py)");
   await page.goto("/");
   await page.click("#start");
   // The camera picture must not be cropped (portrait 360x640 source): cropping can cut off the feet.

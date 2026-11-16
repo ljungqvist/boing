@@ -11,8 +11,8 @@ export interface SignalOptions {
   minVisibility?: number;
   /**
    * Average the visible ones of a pair (toes, heels, hips) instead of needing both (default): from the
-   * side the far foot hides behind the near one, and without this no side-on jump is measured. On the
-   * front-view library sets it is equal or a little better (docs/accuracy-ideas.md, idea 5).
+   * side the far foot hides behind the near one, and without this no side-on jump is measured. On
+   * front-view jumps it is equal or a little better.
    */
   anyOfPair?: boolean;
 }

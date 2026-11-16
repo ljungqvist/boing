@@ -35,7 +35,7 @@ How the jump is performed is up to the athlete and their coach.
    slow-motion mode (120/240 fps). Android slow-motion files are converted to real time
    automatically.
 
-Accuracy (see `docs/evaluation/`): about ±2–4 cm at 30 fps. Higher frame rates
+Accuracy: about ±2–4 cm at 30 fps. Higher frame rates
 should be considerably better, but this hasn't been measured against a reference yet.
 HEVC (H.265) videos play in Safari and in Chrome on most Macs and phones, but not in Firefox.
 
@@ -64,18 +64,18 @@ Two versions are published on GitHub Pages by `.github/workflows/pages.yml`:
 
 A push to either branch rebuilds and publishes both. A broken `dev` build never blocks
 `main`. Work goes to `dev` first and is merged into `main` when it's good.
-`tools/server.sh web` also builds and publishes it at https://ljungqvist.info/boing/ (the
-APK links moved to `/boing/apk`). `boing.ljungqvist.info` has no DNS record.
+The same build is also published at https://ljungqvist.info/boing/, with the APK links at
+`/boing/apk`.
 The pose models are downloaded from Google's MediaPipe model storage at runtime.
 
 ## Development
 
 ```
 npm test               # unit tests (analysis, MP4 metadata)
-npm run e2e            # end-to-end in Google Chrome with a fake camera; needs ../data
-npm run evaluate       # offline evaluation over the test videos (see docs/evaluation)
+npm run e2e            # end-to-end in Google Chrome with a fake camera (clips below)
 ```
 
-Offline tools (Python, `requirements.txt`): `tools/extract_pose.py` (landmarks per frame),
-`tools/plot_jumps.py`, `tools/make_y4m.py` (fake-camera input). Test videos are not in
-the repository; `testdata/videos.json` lists their sources.
+The end-to-end tests feed your own jump videos to Chrome's fake camera. Test videos are not in
+the repository: turn a video into fake-camera input with `tools/make_y4m.py` (Python,
+`requirements.txt`) and put the clips in `e2e/clips/`, or point `BOING_E2E` at another folder.
+Each test names the clip it needs and is skipped when the clip is missing.

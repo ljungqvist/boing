@@ -26,7 +26,7 @@ export interface Jump {
    * The height shown, metres: takeoff to apex, g/2·(tApex − tOff)², but at most the flight-time
    * height. A jump can't land higher than it took off, so a rise above the flight-time height is a
    * late apex (moving towards the camera in the air, unsteady hip points); the flight time is then
-   * the better of the two (docs/evaluation/2026-10-20-side-view-reference.md).
+   * the better of the two.
    */
   hPrimary: number;
   /** Takeoff to apex, g/2·(tApex − tOff)², metres, not capped. */
@@ -58,7 +58,7 @@ const MAX_HEIGHT_RATIO = 2;
  * Takeoff→apex may exceed the flight-time height only by measurement noise: more would mean landing
  * higher than the takeoff, which a jump can't do (the body is never more stretched than at takeoff).
  * Moving towards a floor-level camera in the air shifts the hips' apex late and reads 28–71 cm for a
- * 16 cm jump; normal jumps stay below ≈ 1.15 at 30 fps (docs/evaluation/2026-10-15-accuracy-review.md).
+ * 16 cm jump; normal jumps stay below ≈ 1.15 at 30 fps.
  */
 const MAX_RISE_OVER_FLIGHT = 1.2;
 
@@ -168,7 +168,7 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
 export const POOR_FIT = 0.015;
 /**
  * The hip-based edges of a toe plateau are used if their two heights agree within this factor
- * (docs/accuracy-ideas.md: recovers the plateau jumps of 2026-10-15/19/21 without changing others).
+ * (recovers plateau jumps without changing others).
  */
 export const PLATEAU_RATIO = 1.3;
 /** Toes this far above the floor (fraction of body height) count as clearly in the air. */
