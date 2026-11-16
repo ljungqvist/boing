@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("live camera: measures the jump in the fake camera feed", async ({ page }) => {
-  test.skip(!existsSync(resolve(DATA, "e2e", "front-jump.y4m")), "fake camera file missing (tools/make_y4m.py)");
+  test.skip(!existsSync(resolve(DATA, "front-jump.y4m")), "fake camera clip front-jump.y4m missing (tools/make_y4m.py)");
   await page.goto("/");
   await page.click("#start");
   // The y4m loops; the first jump is around 5.4 s into the clip.
@@ -21,15 +21,15 @@ test("live camera: measures the jump in the fake camera feed", async ({ page }) 
   const s = await app(page);
   const jump = s.results.find((r) => r.accepted)!;
   console.log("live result", jump);
-  // Offline evaluation (heavy model, 1080p): 37.3 cm takeoff→apex, 39.9 cm flight time.
+  // Measured offline (heavy model, 1080p): 37.3 cm takeoff→apex, 39.9 cm flight time.
   expect(jump.hPrimary * 100).toBeGreaterThan(32);
   expect(jump.hPrimary * 100).toBeLessThan(43);
   await expect(page.locator(".chip")).toHaveCount(s.results.filter((r) => r.accepted).length);
 });
 
 test("file: slow-motion recording is converted to real time", async ({ page }) => {
-  const file = resolve(DATA, "own", "20261013_174441.mp4");
-  test.skip(!existsSync(file), "own slow-motion recording missing");
+  const file = resolve(DATA, "slow-motion.mp4");
+  test.skip(!existsSync(file), "slow-motion.mp4 missing (120 fps phone recording with two jumps)");
   await page.goto("/");
   await page.setInputFiles("#file", file);
   await expect.poll(async () => (await app(page)).state, { timeout: 280_000, intervals: [2000] }).toMatch(/done|error/);
@@ -37,7 +37,7 @@ test("file: slow-motion recording is converted to real time", async ({ page }) =
   console.log("file results", s.error, s.results);
   expect(s.error).toBe("");
   const accepted = s.results.filter((r) => r.accepted);
-  // Offline evaluation: 23.3 and 22.7 cm takeoff→apex at 120 fps.
+  // Measured offline: 23.3 and 22.7 cm takeoff→apex at 120 fps.
   expect(accepted).toHaveLength(2);
   expect(accepted[0].fps).toBeGreaterThan(100);
   for (const [r, ref] of accepted.map((r, i) => [r, [23.3, 22.7][i]] as const)) {

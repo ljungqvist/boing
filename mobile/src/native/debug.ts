@@ -5,15 +5,15 @@ import { uniqueId } from "../logic/jumps";
 /**
  * Debug recordings: each kept clip of measured jumps gets a folder with the clip and a session.json
  * (diagnostics with pose and motion data), and a `.ready` file once complete. Android's upload
- * service (modules/boing-upload) sends ready folders to the public server on server (server/server/)
- * in the background and deletes them. Kept and sent only with consent (logic/consent.ts).
+ * service (modules/boing-upload) sends ready folders to the upload server (DEFAULT_SERVER) in the
+ * background and deletes them. Kept and sent only with consent (logic/consent.ts).
  */
 
 /** Default server for the recording uploads. */
 export const DEFAULT_SERVER = "https://ljungqvist.info/boing";
 
 /**
- * Shared upload key for the server server, built into the APK by CI from the GitHub secret
+ * Shared upload key for the upload server, built into the APK by CI from the GitHub secret
  * BOING_UPLOAD_KEY. Anyone who unpacks the APK can read it: it only keeps out casual abuse.
  */
 const UPLOAD_KEY = process.env.EXPO_PUBLIC_BOING_UPLOAD_KEY ?? "";

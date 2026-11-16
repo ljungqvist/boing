@@ -1,6 +1,5 @@
 // Allows plain HTTP: to localhost for scripts/analyze-on-device.sh (adb reverse serves a test video
-// from the computer), and to a computer on the local network for sending debug recordings
-// (tools/devserver.py). Android can't limit cleartext to private addresses, so it's allowed in general;
+// from the computer), and to a computer on the local network (a local test server). Android can't limit cleartext to private addresses, so it's allowed in general;
 // the app itself only fetches pose models, over HTTPS.
 const { AndroidConfig, withAndroidManifest, withDangerousMod } = require("expo/config-plugins");
 const fs = require("fs");

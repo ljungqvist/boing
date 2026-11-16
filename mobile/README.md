@@ -21,7 +21,7 @@ is out, the next clip starts and the skeleton comes back (green: ready).
 Each measured jump's diagnostics line says where the time went (menu → Diagnostics), e.g.
 `took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU), decode 1.8 alongside, 192 frames`: waiting for the
 clip to end, loading the model, the pose model on all frames, and decoding (overlapped with the pose
-model). Background: `../docs/evaluation/2026-10-29-measuring-speed.md`. To compare, menu →
+model). To compare, menu →
 "Re-measure jumps on: GPU / CPU" and "Re-measuring window: normal / short" (from the next Start).
 The recording starts ≈ 0.15–0.2 s later than the live clock says; after the first re-measured jump the
 app corrects for it (`clockShift` in the log, `offset` is then what's left). "Short" pads the window by
@@ -183,7 +183,6 @@ scripts/analyze-on-device.sh <video.mp4>   # analyse a file with the installed a
 `analyze-on-device.sh` serves the video from this computer over `adb reverse`, opens the app's
 `boing://analyze?url=http://localhost:8765/…` link (the app downloads and analyses it) and reads the
 result from the log (`BOING_FILE …`). Live jumps log `BOING_LIVE` and `BOING_LOG` lines.
-Results against the web app: `../docs/evaluation/2026-10-14-native-app.md`.
 
 On an Apple-silicon Mac, use an Android 13 emulator image with `-gpu host`: newer images advertise
 CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path crashes (SIGILL).
@@ -198,27 +197,9 @@ CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path cras
   (`/done`) and frees the phone.
 - "Withdraw consent" turns keeping off, deletes unsent recordings and, if ticked, asks the server to
   delete everything the phone sent (`/erase?phone=<recording ID>`; retried at start when offline).
-- Server (hard-coded): https://ljungqvist.info/boing (`../server/server/`, PHP on server), so anyone with the
-  APK can send recordings. Uploads need the `X-Boing-Key` header; CI builds the key into the APK from the
-  GitHub secret `BOING_UPLOAD_KEY` (a local build without `EXPO_PUBLIC_BOING_UPLOAD_KEY` set gets 403).
-
-Uploads land in `~/server-data/uploads/<session>/` on server and are fetched
-file by file over ssh, then removed there.
-
-```
-tools/server.sh deploy   # after changing server/server/
-tools/server.sh rotate && tools/server.sh key   # new key; installed APKs stop uploading until rebuilt
-```
-
-The old local dev server (`tools/devserver.py`) is no longer reachable from the app, since the address
-is hard-coded.
-
-```
-python3 tools/devserver.py        # http://<this computer>:8765/ on the local network
-```
-
-- Put an APK into `../data/apk/` and open the address on the phone to download and install it.
-- `npx tsx tools/review/pose_import.ts` turns pose data into landmark files for the review tools.
+- Server (hard-coded): https://ljungqvist.info/boing, so anyone with the APK can send recordings.
+  Uploads need the `X-Boing-Key` header; CI builds the key into the APK from the GitHub secret
+  `BOING_UPLOAD_KEY` (a local build without `EXPO_PUBLIC_BOING_UPLOAD_KEY` set gets 403).
 
 ## Native module
 

@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
 
-/** Test videos live outside the repo (third-party / personal content). */
-export const DATA = resolve(process.env.BOING_DATA ?? resolve(import.meta.dirname, "..", "data"));
+/** Fake-camera clips and test videos (tools/make_y4m.py): not in the repo. e2e/clips/ or $BOING_E2E. */
+export const DATA = resolve(process.env.BOING_E2E ?? resolve(import.meta.dirname, "e2e", "clips"));
 
 export default defineConfig({
   testDir: "e2e",
@@ -22,7 +22,7 @@ export default defineConfig({
       args: [
         "--use-fake-ui-for-media-stream",
         "--use-fake-device-for-media-stream",
-        `--use-file-for-fake-video-capture=${resolve(DATA, "e2e", "front-jump.y4m")}`,
+        `--use-file-for-fake-video-capture=${resolve(DATA, "front-jump.y4m")}`,
       ],
     },
   },
