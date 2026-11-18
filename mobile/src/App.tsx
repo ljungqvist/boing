@@ -12,6 +12,7 @@ import { discardFeedback } from "../../src/analysis/discard";
 import { entriesForClip, type Entry } from "./logic/jumps";
 import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
+import { fpsLabel } from "./logic/camera";
 import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
@@ -54,6 +55,8 @@ function Main() {
   const [details, setDetails] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [info, setInfo] = useState<CameraInfo | null>(null);
+  /** Frame rate (real time) of the last analysed video file, for the frame-rate badge. */
+  const [fileFps, setFileFps] = useState(0);
   /** The last camera info, kept after Stop for the shared diagnostics. */
   const lastInfo = useRef<CameraInfo | null>(null);
   if (info) lastInfo.current = info;
@@ -170,6 +173,7 @@ function Main() {
     setLogs([]);
     setFlash(null);
     setDetails(null);
+    setFileFps(0);
   }, []);
 
   /** Shows (and for live jumps announces) a result; resolves once it has been said. */
@@ -262,6 +266,7 @@ function Main() {
         (p) => me === run.current && setStatus({ text: `Analysing · ${Math.round(p * 100)} %`, tone: "idle" }),
       );
       if (me !== run.current) return;
+      setFileFps(r.fps);
       reportFile({
         uri, ms: Date.now() - t0, info: v, timeScale: r.timeScale, fps: r.fps,
         jumps: r.jumps.map((m) => ({
@@ -323,6 +328,8 @@ function Main() {
   const heights = results.map((m) => m.jump.hPrimary);
   const sum = summarize(heights);
   const live = mode === "live";
+  // The camera's frame rate while live, the analysed file's afterwards: the frames heights come from.
+  const fpsBadge = fpsLabel(live ? info?.fps : mode === "idle" ? fileFps : 0);
 
   return (
     <View style={s.root}>
@@ -378,6 +385,12 @@ function Main() {
             </Pressable>
           </View>
         </View>
+
+        {fpsBadge && (
+          <View style={[s.fpsWrap, { top: insets.top + 56 }]} pointerEvents="none">
+            <Text style={[s.fps, fpsBadge.low && s.fpsLow]}>{fpsBadge.text}</Text>
+          </View>
+        )}
 
         {flash && (
           <View style={s.flashWrap} pointerEvents="none">
@@ -652,6 +665,12 @@ const s = StyleSheet.create({
   },
   pillText: { color: C.text, fontSize: 14, fontWeight: "600" },
   topActions: { flexDirection: "row", gap: 14 },
+  fpsWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
+  fps: {
+    color: C.text, fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], overflow: "hidden",
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  fpsLow: { color: "#1d1500", backgroundColor: C.warn },
   flashWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
   flashBox: { backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 16, paddingHorizontal: 20, paddingVertical: 6 },
   flash: { color: C.text, fontSize: 88, fontWeight: "800", fontVariant: ["tabular-nums"] },

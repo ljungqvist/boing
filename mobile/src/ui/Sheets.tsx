@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { toSignals } from "../../../src/analysis/signals";
+import { fpsLabel, LOW_FPS } from "../logic/camera";
 import { cm, NOTE_TEXT } from "../logic/measure";
 import type { Measured } from "../logic/video";
 import { Icon } from "./Icon";
@@ -29,6 +30,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
 export function JumpDetails({ m, index, count, onClose }: { m: Measured; index: number; count: number; onClose: () => void }) {
   const j = m.jump;
   const notes = j.flags.map((f) => NOTE_TEXT[f]).filter((n): n is string => !!n);
+  if (fpsLabel(m.fps)?.low) notes.push(`Measured at ${Math.round(m.fps)} fps: below ${LOW_FPS} fps the height may be less accurate.`);
   if (m.approximate) notes.push("Measured from fewer frames (live analysis only); the result may be less accurate.");
   const frames = m.refined && m.framesFirst !== undefined ? `${j.airborneFrames} (first pass: ${m.framesFirst})` : `${j.airborneFrames}`;
   const signals = toSignals({ ...m.size, fps: m.fps, frames: m.frames });
