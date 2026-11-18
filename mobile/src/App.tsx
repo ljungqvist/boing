@@ -669,8 +669,8 @@ async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: R
   await Share.share({ message: pose ? poseReport(context, logs) : diagnosticsReport(context, logs) }).catch(() => {});
 }
 
-/** Blind-mode colours: light (some white mixed in) to give off as much light as possible, still easy to tell apart. */
-const BLIND: Record<BlindColor, string> = { red: "#ff5c5c", green: "#70ff70", orange: "#ffb54a" };
+/** Blind-mode colours: full strength, to light up the surroundings. */
+const BLIND: Record<BlindColor, string> = { red: "#ff0000", green: "#00ff00", orange: "#ff8000" };
 
 const pillStyle = (t: Tone) =>
   ({ idle: {}, ready: { backgroundColor: C.ok }, adjust: { backgroundColor: C.warn }, air: { backgroundColor: C.accent }, error: { backgroundColor: C.error } })[t];
