@@ -19,6 +19,7 @@ import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
 import { CONSENT_TITLE, CONSENT_VERSION, PRIVACY_URL, consentText, hasConsent, hasRecordedConsent, isPhoneId, keepActive, newPhoneId, shouldAskConsent } from "./logic/consent";
 import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, requestErase, saveSettings, startUploading, writeSession } from "./native/debug";
+import { maxBrightness } from "./native/brightness";
 import { announce, announceFailure, announceMeasuring } from "./native/feedback";
 import { blindColor, type BlindColor } from "./logic/blind";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
@@ -344,6 +345,12 @@ function Main() {
   // Blind mode: the back camera faces the jumper and the screen faces down, away from everyone.
   const blind = live && facing === "back" && screenDown;
   blindRef.current = blind;
+  // Full brightness while blind (also against automatic brightness, the light sensor may be covered).
+  useEffect(() => {
+    if (!blind) return;
+    void maxBrightness(true);
+    return () => void maxBrightness(false);
+  }, [blind]);
   const blindFill: BlindColor | null = blind ? blindColor(status.tone, flash?.measuring === true) : null;
 
   return (
@@ -662,8 +669,8 @@ async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: R
   await Share.share({ message: pose ? poseReport(context, logs) : diagnosticsReport(context, logs) }).catch(() => {});
 }
 
-/** Blind-mode colours: full strength, to light up the surroundings. */
-const BLIND: Record<BlindColor, string> = { red: "#ff0000", green: "#00ff00", orange: "#ff8000" };
+/** Blind-mode colours: light (some white mixed in) to give off as much light as possible, still easy to tell apart. */
+const BLIND: Record<BlindColor, string> = { red: "#ff5c5c", green: "#70ff70", orange: "#ffb54a" };
 
 const pillStyle = (t: Tone) =>
   ({ idle: {}, ready: { backgroundColor: C.ok }, adjust: { backgroundColor: C.warn }, air: { backgroundColor: C.accent }, error: { backgroundColor: C.error } })[t];

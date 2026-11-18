@@ -33,7 +33,8 @@ height" (also when re-measuring timed out or the recording couldn't be read).
 
 **Blind mode**: with the back camera on and the screen facing below the horizon (nobody can read it),
 most of the screen turns one colour — red: not ready, green: ready for a jump, orange: in the air or
-measuring — and "Measuring" is also said out loud.
+measuring — at full brightness (also when automatic brightness would dim it, e.g. with the light
+sensor against a wall), and "Measuring" is also said out loud.
 
 ## Build and run (Android)
 
