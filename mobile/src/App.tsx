@@ -19,7 +19,8 @@ import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
 import { CONSENT_TITLE, CONSENT_VERSION, PRIVACY_URL, consentText, hasConsent, hasRecordedConsent, isPhoneId, keepActive, newPhoneId, shouldAskConsent } from "./logic/consent";
 import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, requestErase, saveSettings, startUploading, writeSession } from "./native/debug";
-import { announce, announceFailure } from "./native/feedback";
+import { announce, announceFailure, announceMeasuring } from "./native/feedback";
+import { blindColor, type BlindColor } from "./logic/blind";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
@@ -55,6 +56,8 @@ function Main() {
   const [details, setDetails] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
   const [info, setInfo] = useState<CameraInfo | null>(null);
+  /** The screen faces below the horizon (from the live camera's motion sensor). */
+  const [screenDown, setScreenDown] = useState(false);
   /** Frame rate (real time) of the last analysed video file, for the frame-rate badge. */
   const [fileFps, setFileFps] = useState(0);
   /** The last camera info, kept after Stop for the shared diagnostics. */
@@ -73,6 +76,7 @@ function Main() {
   const [session, setSession] = useState(0); // remounts the camera on Start/flip
   const controller = useRef<LiveController | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const blindRef = useRef(false);
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const run = useRef(0); // cancels a file analysis when something else starts
@@ -176,15 +180,18 @@ function Main() {
     setFileFps(0);
   }, []);
 
-  /** Shows (and for live jumps announces) a result; resolves once it has been said. */
-  const addResult = useCallback((m: Measured, live: boolean): Promise<void> => {
+  /**
+   * Shows (and for live jumps announces) a result; resolves once it has been said. `measuring`:
+   * "Measuring…" was shown for this jump, so it is always announced, as a height or a failure.
+   */
+  const addResult = useCallback((m: Measured, live: boolean, measuring = false): Promise<void> => {
     const j = m.jump;
     if (!accepted(j)) {
       const reason = j.flags.map((f) => REJECT_TEXT[f]).filter(Boolean).join(", ");
       setIgnored((xs) => [`at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm)`, ...xs]);
       if (live) {
-        // Say so only if the recording was re-measured and still gave no height; live rejects stay silent.
-        const feedback = discardFeedback({ refined: m.refined, pending: controller.current?.pending ?? 0 });
+        // Say so for every jump shown as "Measuring…"; live rejects stay silent.
+        const feedback = discardFeedback({ measuring, pending: controller.current?.pending ?? 0 });
         if (feedback === "failure") {
           showFlash({ text: "Couldn't measure", measuring: false, failed: true });
           return announceFailure(soundRef.current);
@@ -202,11 +209,15 @@ function Main() {
 
   const events: LiveEvents = {
     status: (s) => setStatus((old) => (old.text === s.text && old.tone === s.tone ? old : s)),
-    measuring: () => showFlash({ text: "Measuring…", measuring: true }),
-    result: (m) => {
+    measuring: () => {
+      showFlash({ text: "Measuring…", measuring: true });
+      // In blind mode nobody sees the screen: say it.
+      if (blindRef.current) void announceMeasuring(soundRef.current);
+    },
+    result: (m, measuring) => {
       console.log(`BOING_LIVE ${JSON.stringify({ h: m.jump.hPrimary, hFlight: m.jump.hFlight, fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags })}`);
       // The live analysis resumes once this has been said (see LiveController).
-      return addResult(m, true);
+      return addResult(m, true, measuring);
     },
     log: (e) => {
       if (keepNow) clipLogs.current.push(e);
@@ -330,6 +341,10 @@ function Main() {
   const live = mode === "live";
   // The camera's frame rate while live, the analysed file's afterwards: the frames heights come from.
   const fpsBadge = fpsLabel(live ? info?.fps : mode === "idle" ? fileFps : 0);
+  // Blind mode: the back camera faces the jumper and the screen faces down, away from everyone.
+  const blind = live && facing === "back" && screenDown;
+  blindRef.current = blind;
+  const blindFill: BlindColor | null = blind ? blindColor(status.tone, flash?.measuring === true) : null;
 
   return (
     <View style={s.root}>
@@ -346,6 +361,7 @@ function Main() {
             keep={keepNow && keep}
             measureOnCpu={settings.measureOnCpu === true}
             shortWindow={settings.shortWindow === true}
+            onScreenDown={setScreenDown}
             onKeptClip={(id, name) => {
               if (!keep) return;
               // The clip's log entries are all in by now (the controller logs before it keeps the clip).
@@ -357,6 +373,10 @@ function Main() {
               startUploading(phoneId);
             }}
           />
+        )}
+        {blindFill && (
+          // Most of the screen in one colour, to be seen from behind the phone (see logic/blind.ts).
+          <View style={[s.blind, { backgroundColor: BLIND[blindFill] }]} pointerEvents="none" accessibilityLabel={`Blind mode: ${blindFill}`} />
         )}
         {!live && results.length === 0 && mode !== "file" && (
           <View style={s.placeholder}>
@@ -642,6 +662,9 @@ async function shareDiagnostics(facing: string, info: CameraInfo | null, logs: R
   await Share.share({ message: pose ? poseReport(context, logs) : diagnosticsReport(context, logs) }).catch(() => {});
 }
 
+/** Blind-mode colours: full strength, to light up the surroundings. */
+const BLIND: Record<BlindColor, string> = { red: "#ff0000", green: "#00ff00", orange: "#ff8000" };
+
 const pillStyle = (t: Tone) =>
   ({ idle: {}, ready: { backgroundColor: C.ok }, adjust: { backgroundColor: C.warn }, air: { backgroundColor: C.accent }, error: { backgroundColor: C.error } })[t];
 const pillText = (t: Tone) =>
@@ -650,6 +673,7 @@ const pillText = (t: Tone) =>
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   viewer: { flex: 1, backgroundColor: "#000" },
+  blind: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
   placeholder: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", padding: 32, gap: 24 },
   placeholderText: { color: C.muted, textAlign: "center", lineHeight: 22, fontSize: 15 },
   b: { color: C.text, fontWeight: "600" },

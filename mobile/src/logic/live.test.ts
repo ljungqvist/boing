@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { syntheticFrames } from "../../../src/analysis/synthetic";
 import type { PoseFrame } from "../../../src/analysis/types";
 import { LiveController, type LiveDeps } from "./live";
@@ -11,6 +11,8 @@ import type { Measured } from "./video";
  */
 function setup(opts: {
   recordFails?: boolean; analyzeFails?: boolean; startLag?: number; liveFps?: number;
+  /** Stopping a recording never finishes (a stuck recorder). */
+  stopHangs?: boolean;
   /** The recording's clock runs this much slower around each takeoff (a wrong time base). */
   clipStretch?: number;
   /** In the recording, the hips drift up this fast (m/s) after takeoff: moving towards a floor-level camera. */
@@ -34,7 +36,13 @@ function setup(opts: {
       if (clips.some((x) => !x.stopped)) throw new Error("A recording is already in progress");
       const c = { start: now + (opts.startLag ?? 0), stopped: false, deleted: false };
       clips.push(c);
-      return { stop: async () => { c.stopped = true; return `clip@${c.start}`; } };
+      return {
+        stop: async () => {
+          c.stopped = true;
+          if (opts.stopHangs) return new Promise<string>(() => {});
+          return `clip@${c.start}`;
+        },
+      };
     },
     async analyzeClip(path, from, to) {
       if (opts.analyzeFails) throw new Error("decoder failed");
@@ -66,6 +74,8 @@ function setup(opts: {
     return f.lm.map((p, i) => (i === 23 || i === 24 ? [p[0], p[1] - up, p[2], p[3]] : p) as typeof p);
   };
   const results: Measured[] = [];
+  /** For each result: whether `measuring()` had been called for it. */
+  const afterMeasuring: boolean[] = [];
   const pendingAtResult: number[] = [];
   const logs: Record<string, unknown>[] = [];
   let measuring = 0;
@@ -75,8 +85,9 @@ function setup(opts: {
     status: (st) => statuses.add(st.text),
     paused: (on) => paused.push(on),
     measuring: () => measuring++,
-    result: async (m) => {
+    result: async (m, wasMeasuring) => {
       results.push(m);
+      afterMeasuring.push(wasMeasuring);
       pendingAtResult.push(live.pending);
       const until = now + (opts.readout ?? 0);
       while (now < until && !ended) await Promise.resolve();
@@ -98,10 +109,31 @@ function setup(opts: {
     ended = true;
     await live.stop();
   }
-  return { live, run, results, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
+  return { live, run, results, afterMeasuring, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
+  it("gives every jump shown as measuring a result flagged so, even when re-measuring fails", async () => {
+    const s = setup({ analyzeFails: true });
+    await s.run();
+    expect(s.measuring()).toBe(2);
+    expect(s.afterMeasuring.filter(Boolean)).toHaveLength(2);
+  });
+
+  it("gives up on a recording that never finishes stopping, with a result for the jump", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const s = setup({ stopHangs: true, jumps: [{ tTakeoff: 4, height: 0.3 }], duration: 7 });
+      const done = s.run();
+      await vi.advanceTimersByTimeAsync(30_000);
+      await done;
+      expect(s.measuring()).toBe(1);
+      expect(s.afterMeasuring).toEqual([true]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("measures each live jump again from every recorded frame", async () => {
     const s = setup();
     await s.run();

@@ -28,6 +28,13 @@ app corrects for it (`clockShift` in the log, `offset` is then what's left). "Sh
 0.1 s instead of 0.3 s once that correction is known (≈ 16 % fewer frames). A live "jump" over 1 s in the air isn't
 re-measured (a false alarm, not a jump).
 
+Every jump shown as "Measuring…" ends with an announcement: its height, or "Couldn't determine the
+height" (also when re-measuring timed out or the recording couldn't be read).
+
+**Blind mode**: with the back camera on and the screen facing below the horizon (nobody can read it),
+most of the screen turns one colour — red: not ready, green: ready for a jump, orange: in the air or
+measuring — and "Measuring" is also said out loud.
+
 ## Build and run (Android)
 
 Needs JDK 17 and the Android SDK (`brew install openjdk@17 && brew install --cask android-commandlinetools`;

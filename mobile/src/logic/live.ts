@@ -39,8 +39,10 @@ export interface LiveEvents {
   /**
    * A finished measurement (also for rejected movements: check `accepted(m.jump)`). May return a
    * promise for its announcement: after a re-measured jump, the live analysis resumes once it resolves.
+   * `measuring`: `measuring()` was called for this jump, so it must get an outcome (height or failure),
+   * whatever happened to its re-measurement.
    */
-  result(m: Measured): void | Promise<void>;
+  result(m: Measured, measuring: boolean): void | Promise<void>;
   /** Diagnostics for each live jump (refinement details). */
   log?(entry: Record<string, unknown>): void;
   /**
@@ -68,6 +70,8 @@ export interface LiveOptions {
 
 /** Live pose history kept for status, fallback plots and diagnostics (seconds). */
 const HISTORY = 20;
+/** Give up waiting for a recording to finish after this many milliseconds (the jump still gets an outcome). */
+const STOP_TIMEOUT_MS = 10_000;
 
 interface OpenClip {
   clip: Clip;
@@ -217,7 +221,7 @@ export class LiveController {
         tOff: j.tOff, hLive: j.hPrimary, framesLive: j.airborneFrames, gLive: j.gImplied, flagsLive: j.flags,
         refined: false, reason: c ? "not-refinable-or-before-clip" : "no-clip",
       });
-      this.events.result(live);
+      this.events.result(live, false);
       return;
     }
     this.pending++;
@@ -293,7 +297,7 @@ export class LiveController {
 
   private async stopClip(c: OpenClip): Promise<string | null> {
     try {
-      return await c.clip.stop();
+      return await withTimeout(c.clip.stop(), STOP_TIMEOUT_MS);
     } catch (e) {
       this.events.log?.({ error: `stop recording: ${String((e as Error)?.message ?? e)}` });
       return null;
@@ -316,7 +320,7 @@ export class LiveController {
           done++;
           this.events.log?.(log);
           // Read out before the next jump can be seen.
-          await this.events.result(measured);
+          await this.events.result(measured, true);
         }
       } finally {
         // Even if a result handler throws: nothing stays pending, the clip is deleted.
