@@ -2,7 +2,7 @@
   "expo": {
     "name": "Boing",
     "slug": "boing",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "portrait",
     "scheme": "boing",
     "icon": "./assets/icon.png",
