@@ -22,7 +22,7 @@ on:
 permissions:
   contents: write # publish the rolling release
 
-# Build number and commit: Android's version and the "Build" row in the app's settings (mobile/app.config.js).
+# Build number and commit: Android's version and the "Version" row in the app's settings (mobile/app.config.js).
 env:
   EXPO_PUBLIC_BOING_BUILD: ${{ github.run_number }}
   EXPO_PUBLIC_BOING_BRANCH: ${{ github.ref_name }}

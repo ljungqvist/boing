@@ -8,6 +8,7 @@ import { stopUploads } from "boing-upload";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCameraPermission } from "react-native-vision-camera";
+import appJson from "../app.json";
 import { discardFeedback } from "../../src/analysis/discard";
 import { entriesForClip, type Entry } from "./logic/jumps";
 import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
@@ -509,7 +510,7 @@ function Main() {
       )}
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
-          <Row label="Build" value={BUILD} />
+          <Row label="Version" value={BUILD} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
@@ -748,10 +749,14 @@ const s = StyleSheet.create({
   trace: { color: C.text, fontSize: 11, marginTop: 12, fontFamily: "monospace" },
 });
 
-/** CI build number, commit and branch (app.config.js, android.yml); "local" for other builds. */
+/**
+ * Version name (app.json), then the build number, commit and branch of CI builds (app.config.js, android.yml).
+ * The number is Android's version code: the run number on dev/main builds, the version_code input on Play builds.
+ * "local" builds show only the version name.
+ */
 const BUILD = process.env.EXPO_PUBLIC_BOING_BUILD
-  ? `${process.env.EXPO_PUBLIC_BOING_BUILD} (${process.env.EXPO_PUBLIC_BOING_COMMIT ?? "?"}, ${process.env.EXPO_PUBLIC_BOING_BRANCH ?? "?"})`
-  : "local";
+  ? `${appJson.expo.version} · ${process.env.EXPO_PUBLIC_BOING_BRANCH === "play" ? "code" : "build"} ${process.env.EXPO_PUBLIC_BOING_BUILD} (${process.env.EXPO_PUBLIC_BOING_COMMIT ?? "?"}, ${process.env.EXPO_PUBLIC_BOING_BRANCH ?? "?"})`
+  : `${appJson.expo.version} · local`;
 
 /** Phone, camera and time, at the top of diagnostics and debug packages. */
 function deviceContext(facing: string, info: CameraInfo | null): Record<string, unknown> {

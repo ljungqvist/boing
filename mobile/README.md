@@ -59,7 +59,7 @@ downloadable without a GitHub login:
 - dev: https://github.com/ljungqvist/boing/releases/download/dev-latest/boing-dev.apk
 
 Each CI build is numbered (the workflow's run number) and carries its commit: the app's settings show
-"Build 37 (be5d3b1, dev)", Android's app info shows version "0.1.0 (build 37, be5d3b1)", and the
+"Version 0.1.2 · build 37 (be5d3b1, dev)", Android's app info shows version "0.1.0 (build 37, be5d3b1)", and the
 diagnostics start with it. Local builds say "local".
 For development with hot reload: `npx expo run:android` (debug build + Metro).
 
@@ -74,7 +74,7 @@ the production package `info.ljungqvist.boing`, including when run from `dev`.
 It builds the same arm64 architecture as the APK action. It does not publish
 to Play or change the existing APK action or APK signing key.
 The Play version name is the app version (for example `0.1.1`); the numeric
-version code is the workflow input. The app's Build row still identifies the
+version code is the workflow input. The app's Version row still identifies the
 build number and source commit.
 
 After the signed AAB has been verified and uploaded to GitHub's artifacts, a
