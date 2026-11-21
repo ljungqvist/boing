@@ -12,6 +12,7 @@ import {
 } from "react-native-vision-camera";
 import { Accelerometer, Gyroscope } from "expo-sensors";
 import { scheduleOnRN } from "react-native-worklets";
+import { screenFacesDown } from "../logic/blind";
 import { bestFps } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
 import { SampleBuffer } from "../logic/motion";
@@ -44,13 +45,15 @@ interface Props {
   measureOnCpu?: boolean;
   /** Re-measure a shorter window once the recording's clock shift is known (debug setting, A/B test). */
   shortWindow?: boolean;
+  /** The screen turned to face below the horizon (`true`) or above it again (blind mode). */
+  onScreenDown?: (down: boolean) => void;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -66,17 +69,38 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const debugRef = useRef({ keep, onKeptClip });
   debugRef.current = { keep, onKeptClip };
 
+  const screenDownRef = useRef(onScreenDown);
+  screenDownRef.current = onScreenDown;
+
   // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
   const acc = useMemo(() => new SampleBuffer(60), []);
   const gyro = useMemo(() => new SampleBuffer(60), []);
   useEffect(() => {
     Accelerometer.setUpdateInterval(SENSOR_MS);
     Gyroscope.setUpdateInterval(SENSOR_MS);
+    // Where "up" is in the phone's axes, smoothed (≈ 0.2 s), for blind mode. Android reports the
+    // reaction to gravity (+z with the screen up), iOS gravity itself.
+    const sign = Platform.OS === "ios" ? -1 : 1;
+    let up: { x: number; y: number; z: number } | null = null;
+    let down = false;
+    const SMOOTH = 0.05;
     const subs = [
-      Accelerometer.addListener((e) => acc.add([e.timestamp, e.x, e.y, e.z])),
+      Accelerometer.addListener((e) => {
+        acc.add([e.timestamp, e.x, e.y, e.z]);
+        const [x, y, z] = [sign * e.x, sign * e.y, sign * e.z];
+        up = up ? { x: up.x + SMOOTH * (x - up.x), y: up.y + SMOOTH * (y - up.y), z: up.z + SMOOTH * (z - up.z) } : { x, y, z };
+        const now = screenFacesDown(up, down);
+        if (now !== down) {
+          down = now;
+          screenDownRef.current?.(now);
+        }
+      }),
       Gyroscope.addListener((e) => gyro.add([e.timestamp, e.x, e.y, e.z])),
     ];
-    return () => subs.forEach((x) => x.remove());
+    return () => {
+      subs.forEach((x) => x.remove());
+      if (down) screenDownRef.current?.(false);
+    };
   }, [acc, gyro]);
 
   // Pose model (downloaded on first use) and the live detector.
@@ -167,7 +191,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       {
         status: (s) => eventsRef.current.status(s),
         measuring: () => eventsRef.current.measuring(),
-        result: (m) => eventsRef.current.result(m),
+        result: (m, measuring) => eventsRef.current.result(m, measuring),
         log: (e) => eventsRef.current.log?.(e),
         // While a jump is measured, no pose on the camera frames: the phone's power goes to the measurement.
         paused: (on) => { detector.minInterval = on ? Infinity : 0; },

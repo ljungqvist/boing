@@ -28,6 +28,14 @@ app corrects for it (`clockShift` in the log, `offset` is then what's left). "Sh
 0.1 s instead of 0.3 s once that correction is known (≈ 16 % fewer frames). A live "jump" over 1 s in the air isn't
 re-measured (a false alarm, not a jump).
 
+Every jump shown as "Measuring…" ends with an announcement: its height, or "Couldn't determine the
+height" (also when re-measuring timed out or the recording couldn't be read).
+
+**Blind mode**: with the back camera on and the screen facing below the horizon (nobody can read it),
+most of the screen turns one colour — red: not ready, green: ready for a jump, orange: in the air or
+measuring — at full brightness (also when automatic brightness would dim it, e.g. with the light
+sensor against a wall), and "Measuring" is also said out loud.
+
 ## Build and run (Android)
 
 Needs JDK 17 and the Android SDK (`brew install openjdk@17 && brew install --cask android-commandlinetools`;
@@ -51,7 +59,7 @@ downloadable without a GitHub login:
 - dev: https://github.com/ljungqvist/boing/releases/download/dev-latest/boing-dev.apk
 
 Each CI build is numbered (the workflow's run number) and carries its commit: the app's settings show
-"Build 37 (be5d3b1, dev)", Android's app info shows version "0.1.0 (build 37, be5d3b1)", and the
+"Version 0.1.2 · build 37 (be5d3b1, dev)", Android's app info shows version "0.1.0 (build 37, be5d3b1)", and the
 diagnostics start with it. Local builds say "local".
 For development with hot reload: `npx expo run:android` (debug build + Metro).
 
@@ -66,8 +74,8 @@ the production package `info.ljungqvist.boing`, including when run from `dev`.
 It builds the same arm64 architecture as the APK action. It does not publish
 to Play or change the existing APK action or APK signing key.
 The Play version name is the app version (for example `0.1.1`); the numeric
-version code is the workflow input. The app's Build row still identifies the
-build number and source commit.
+version code is the workflow input. The app's Version row shows the version and code (`0.1.2 (3)`); diagnostics add the
+source commit.
 
 After the signed AAB has been verified and uploaded to GitHub's artifacts, a
 separate job creates an annotated Git tag `v<app version>` on the exact source

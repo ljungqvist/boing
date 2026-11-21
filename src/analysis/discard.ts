@@ -8,11 +8,13 @@ export type DiscardFeedback =
   | "none";
 
 /**
- * Only a re-measurement from the recording (`refined`) that ends without a height is announced as a
- * failure. A live candidate rejected straight away is just listed as ignored: the live tracker rejects
- * many movements (camera nudged, walking in and out of view) and must not shout about each of them.
+ * A jump that was announced as "Measuring…" always gets an outcome: its height, or this failure, also
+ * when re-measuring the recording failed (no recording, timeout) and the live fallback is rejected too.
+ * A live candidate rejected straight away (`measuring` false) is just listed as ignored: the live
+ * tracker rejects many movements (camera nudged, walking in and out of view) and must not shout about
+ * each of them.
  */
-export function discardFeedback(d: { refined: boolean; pending: number }): DiscardFeedback {
+export function discardFeedback(d: { measuring: boolean; pending: number }): DiscardFeedback {
   if (d.pending > 0) return "none";
-  return d.refined ? "failure" : "clear-measuring";
+  return d.measuring ? "failure" : "clear-measuring";
 }

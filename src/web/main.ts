@@ -189,8 +189,8 @@ const LIVE_ONLY: Measurement = { refined: false, approximate: false, framesLive:
 function addResult(
   j: Jump, fps: number, frames: PoseFrame[], size: { width: number; height: number }, live: boolean,
   how: Measurement = { ...LIVE_ONLY, framesLive: j.airborneFrames },
-  /** The jump was measured again from the recording (whatever the result), not just by the live tracker. */
-  remeasured = false,
+  /** "Measuring…" was shown for this jump (it was to be measured again from the recording): it gets an outcome. */
+  measuring = false,
 ) {
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   app.results.push({ hPrimary: j.hPrimary, hFlight: j.hFlight, flight: j.tOn - j.tOff, fps, flags: j.flags, accepted, ...how });
@@ -203,8 +203,8 @@ function addResult(
     item.textContent = `at ${j.tOff.toFixed(1)} s: ${reason} (${(j.hPrimary * 100).toFixed(0)} cm, g ${j.gImplied.toFixed(1)})`;
     ignoredEl.querySelector("ul")!.prepend(item);
     if (live) {
-      // Say so only if the recording was re-measured and still gave no height; live rejects stay silent.
-      const action = discardFeedback({ refined: remeasured, pending });
+      // Say so for every jump shown as "Measuring…"; live rejects stay silent.
+      const action = discardFeedback({ measuring, pending });
       if (action === "failure") {
         showFlashText("Couldn't measure", "failed");
         feedback.announceFailure();
@@ -284,7 +284,7 @@ async function refineLive(
   console.warn("refinement failed, using the live result", result);
   const accepted = !j.flags.some((f) => REJECT.includes(f));
   addResult(j, fps, frames, size, true,
-    { refined: false, approximate: accepted, framesLive: j.airborneFrames, framesRefined: null });
+    { refined: false, approximate: accepted, framesLive: j.airborneFrames, framesRefined: null }, true);
 }
 
 function renderSession() {
