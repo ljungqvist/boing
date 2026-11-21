@@ -510,7 +510,7 @@ function Main() {
       )}
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
-          <Row label="Version" value={BUILD} />
+          <Row label="Version" value={VERSION} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
@@ -750,13 +750,20 @@ const s = StyleSheet.create({
 });
 
 /**
- * Version name (app.json), then the build number, commit and branch of CI builds (app.config.js, android.yml).
- * The number is Android's version code: the run number on dev/main builds, the version_code input on Play builds.
- * "local" builds show only the version name.
+ * Version name (app.json), then the build number of CI builds (app.config.js, android.yml): Android's version
+ * code, i.e. the run number on dev/main builds and the version_code input on Play builds.
+ * Dev/main builds also show commit and branch; Play (production) builds only "0.1.2 (3)". Local builds say "local".
  */
-const BUILD = process.env.EXPO_PUBLIC_BOING_BUILD
-  ? `${appJson.expo.version} · ${process.env.EXPO_PUBLIC_BOING_BRANCH === "play" ? "code" : "build"} ${process.env.EXPO_PUBLIC_BOING_BUILD} (${process.env.EXPO_PUBLIC_BOING_COMMIT ?? "?"}, ${process.env.EXPO_PUBLIC_BOING_BRANCH ?? "?"})`
-  : `${appJson.expo.version} · local`;
+const BUILD_NUMBER = process.env.EXPO_PUBLIC_BOING_BUILD;
+const BRANCH = process.env.EXPO_PUBLIC_BOING_BRANCH ?? "?";
+const COMMIT = process.env.EXPO_PUBLIC_BOING_COMMIT ?? "?";
+const VERSION = !BUILD_NUMBER
+  ? `${appJson.expo.version} · local`
+  : BRANCH === "play"
+    ? `${appJson.expo.version} (${BUILD_NUMBER})`
+    : `${appJson.expo.version} · build ${BUILD_NUMBER} (${COMMIT}, ${BRANCH})`;
+/** Diagnostics always carry the commit, also for Play builds. */
+const BUILD = BUILD_NUMBER && BRANCH === "play" ? `${VERSION} ${COMMIT}` : VERSION;
 
 /** Phone, camera and time, at the top of diagnostics and debug packages. */
 function deviceContext(facing: string, info: CameraInfo | null): Record<string, unknown> {

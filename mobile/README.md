@@ -74,8 +74,8 @@ the production package `info.ljungqvist.boing`, including when run from `dev`.
 It builds the same arm64 architecture as the APK action. It does not publish
 to Play or change the existing APK action or APK signing key.
 The Play version name is the app version (for example `0.1.1`); the numeric
-version code is the workflow input. The app's Version row still identifies the
-build number and source commit.
+version code is the workflow input. The app's Version row shows the version and code (`0.1.2 (3)`); diagnostics add the
+source commit.
 
 After the signed AAB has been verified and uploaded to GitHub's artifacts, a
 separate job creates an annotated Git tag `v<app version>` on the exact source
