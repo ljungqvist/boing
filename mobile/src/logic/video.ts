@@ -1,6 +1,6 @@
 import type { Jump } from "../../../src/analysis/jumps";
 import type { PoseFrame } from "../../../src/analysis/types";
-import { closestJump, frameRate, jumpsIn, jumpWindows, timeScaleOf, uniqueJumps } from "./measure";
+import { accepted, closestJump, frameRate, jumpsIn, jumpWindows, timeScaleOf, uniqueJumps } from "./measure";
 import type { Size } from "./pose";
 
 /** A measured jump with the frames it was measured from (for the detail plot). */
@@ -20,8 +20,11 @@ export interface Measured {
 
 /** Pose of the frames of a video file between `from` and `to` (file seconds). */
 export type Analyze = (
-  /** `find`: only to locate jumps (a lighter model will do); `measure`: the final measurement. */
-  opts: { from: number; to: number; minInterval: number; purpose: "find" | "measure" },
+  /**
+   * `find`: only to locate jumps (a lighter model will do); `measure`: the final measurement. `perFrame`: each
+   * frame on its own (no tracking lag) instead of tracking the person (default).
+   */
+  opts: { from: number; to: number; minInterval: number; purpose: "find" | "measure"; perFrame?: boolean },
   onProgress: (fraction: number) => void,
 ) => Promise<{ frames: PoseFrame[]; size: Size }>;
 
@@ -79,16 +82,21 @@ export async function measureVideo(
   const dense: Measured[] = [];
   let fps = 0;
   for (const w of windows) {
-    const r = await analyze({ from: w.from / scale, to: w.to / scale, minInterval: 0, purpose: "measure" }, (p) =>
-      onProgress(0.5 + (0.5 * (done + p * (w.to - w.from))) / total));
-    done += w.to - w.from;
     // The whole file decides about slow motion: one window of a variable-frame-rate file can run
     // below its peak rate and look slowed down.
-    const s = scale;
-    const frames = r.frames.map((f) => ({ t: f.t * s, lm: f.lm }));
-    const wFps = frameRate(frames);
+    const pass = async (perFrame: boolean) => {
+      const r = await analyze({ from: w.from / scale, to: w.to / scale, minInterval: 0, purpose: "measure", perFrame }, (p) =>
+        onProgress(Math.min(1, 0.5 + (0.5 * (done + p * (w.to - w.from))) / total)));
+      const frames = r.frames.map((f) => ({ t: f.t * scale, lm: f.lm }));
+      return { r, frames, jumps: jumpsIn(frames, r.size) };
+    };
+    // Each frame on its own first; with tracking where that measures none of the window's jumps.
+    let m = await pass(true);
+    if (!m.jumps.some(accepted)) m = await pass(false);
+    done += w.to - w.from;
+    const wFps = frameRate(m.frames);
     fps = Math.max(fps, wFps);
-    for (const j of jumpsIn(frames, r.size)) dense.push(measured(j, frames, r.size, wFps, true));
+    for (const j of m.jumps) dense.push(measured(j, m.frames, m.r.size, wFps, true));
   }
   const unique = uniqueJumps(dense.map((m) => m.jump));
   const out = dense.filter((m) => unique.includes(m.jump));

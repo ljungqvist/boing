@@ -20,8 +20,9 @@ export interface LiveDeps {
   /**
    * Pose of every recorded frame between `from` and `to` (seconds from the clip's start), and for
    * the diagnostics: facts about the recorded file (size, rotation, frame rate) and where the time went.
+   * `perFrame`: each frame on its own (no tracking lag) instead of tracking the person through the clip.
    */
-  analyzeClip(path: string, from: number, to: number): Promise<{
+  analyzeClip(path: string, from: number, to: number, perFrame: boolean): Promise<{
     frames: PoseFrame[]; size: Size; video?: Record<string, unknown>; timing?: Record<string, unknown>;
   }>;
   /** Deletes a finished clip (`hasJumps`: it was measured; a debug setting may keep those). */
@@ -66,6 +67,12 @@ export interface LiveOptions {
   timeoutMs?: number;
   /** Once the recording's clock shift is known, pad the window by `PAD_SHORT` instead of `PAD` (A/B test). */
   shortWindow?: boolean;
+  /**
+   * Re-measure with the pose of each frame on its own first (default): tracking smooths the landmarks, which
+   * puts them ≈ 10 ms behind fast movement and drags the feet at takeoff. Where that finds no measurable jump
+   * (the person missed in dim light, another person picked), the clip is measured again with tracking.
+   */
+  perFrame?: boolean;
 }
 
 /** Live pose history kept for status, fallback plots and diagnostics (seconds). */
@@ -109,6 +116,7 @@ export class LiveController {
   private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
   private readonly shortWindow: boolean;
+  private readonly perFrame: boolean;
   /**
    * How far the re-measured takeoffs came out from the live ones (seconds, latest last). The recording
    * starts later than `OpenClip.start` says (≈ 0.15–0.2 s on the phone), the same for every clip.
@@ -130,6 +138,7 @@ export class LiveController {
     this.rotateSecondsInView = opts.rotateSecondsInView ?? 60;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
     this.shortWindow = opts.shortWindow ?? false;
+    this.perFrame = opts.perFrame ?? true;
   }
 
   /** The recording's clock shift: the median of the last 5 offsets (0 before the first). */
@@ -374,16 +383,30 @@ export class LiveController {
       // clipStart: the clip's t = 0 on the clock of everything logged (tOff, the pose, the window). Until 2026-11-25
       // the uncorrected start was logged as clipStart, so logged poses seemed to lag their clip by −clockShift.
       Object.assign(log, { clipStart: start, clipStartUncorrected: c.start, window: { from, to }, clockShift: shift, pad });
-      const r = await withTimeout(this.deps.analyzeClip(path, from, to), this.timeoutMs);
+      const measureClip = async (perFrame: boolean) => {
+        const r = await withTimeout(this.deps.analyzeClip(path, from, to, perFrame), this.timeoutMs);
+        const frames = r.frames.map((f) => ({ t: f.t + start, lm: f.lm }));
+        const found = jumpsIn(frames, r.size);
+        return { r, frames, found, jump: closestJump(found, live.tOff) };
+      };
+      let m = await measureClip(this.perFrame);
+      log.perFrame = this.perFrame;
+      if (this.perFrame && !(m.jump && accepted(m.jump))) {
+        // Nothing measurable frame by frame: once more with tracking (keeps the person through hard frames).
+        log.perFrameTry = {
+          ms: Date.now() - t0, timing: m.r.timing, withPose: m.frames.filter((f) => f.lm).length,
+          ...(m.jump ? { h: m.jump.hPrimary, offset: m.jump.tOff - live.tOff, flags: m.jump.flags } : { error: "no-match" }),
+        };
+        m = await measureClip(false);
+        log.perFrame = false;
+      }
+      const { r, frames, found, jump } = m;
       log.ms = Date.now() - t0;
       Object.assign(size, r.size);
-      const frames = r.frames.map((f) => ({ t: f.t + start, lm: f.lm }));
       const fps = frameRate(frames);
       Object.assign(log, { analysed: frames.length, withPose: frames.filter((f) => f.lm).length, fps, size: r.size, video: r.video, timing: r.timing });
       // For offline analysis (shared separately, see poseReport).
       log.pose = compactPose(frames, r.size);
-      const found = jumpsIn(frames, r.size);
-      const jump = closestJump(found, live.tOff);
       if (!jump) {
         log.error = "no-match";
         log.found = found.map((j) => ({ offset: j.tOff - live.tOff, h: j.hPrimary, frames: j.airborneFrames, flags: j.flags }));

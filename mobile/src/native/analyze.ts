@@ -9,9 +9,9 @@ import { toPath } from "./models";
  */
 export function nativeAnalyzer(videoUri: string, measureModel: string, findModel = measureModel): Analyze {
   const path = toPath(videoUri);
-  return async ({ from, to, minInterval, purpose }, onProgress) => {
+  return async ({ from, to, minInterval, purpose, perFrame = false }, onProgress) => {
     const modelPath = toPath(purpose === "find" ? findModel : measureModel);
-    const r = await boingPose.analyzeVideo(path, { modelPath, from, to, minInterval, preferGpu: true }, onProgress);
+    const r = await boingPose.analyzeVideo(path, { modelPath, from, to, minInterval, preferGpu: true, perFrame }, onProgress);
     return { frames: toFrames(r), size: { width: r.width, height: r.height } };
   };
 }

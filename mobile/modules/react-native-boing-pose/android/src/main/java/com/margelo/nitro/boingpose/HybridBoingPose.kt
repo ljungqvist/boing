@@ -18,7 +18,7 @@ class HybridBoingPose : HybridBoingPoseSpec() {
   override fun createDetector(modelPath: String, preferGpu: Boolean): HybridPoseDetectorSpec =
     HybridPoseDetector(modelPath, preferGpu)
 
-  override fun prepare(modelPath: String, preferGpu: Boolean) = Prepared.prepare(modelPath, preferGpu)
+  override fun prepare(modelPath: String, preferGpu: Boolean, perFrame: Boolean) = Prepared.prepare(modelPath, preferGpu, perFrame)
 
   override fun releasePrepared() = Prepared.release()
 
@@ -33,8 +33,8 @@ class HybridBoingPose : HybridBoingPoseSpec() {
     val file = path.removePrefix("file://")
     val (rotation, duration) = readRotationAndDuration(file)
     val open0 = System.nanoTime()
-    val prepared = Prepared.take(options.modelPath, options.preferGpu)
-    val landmarker = prepared ?: VideoLandmarker.create(options.modelPath, options.preferGpu)
+    val prepared = Prepared.take(options.modelPath, options.preferGpu, options.perFrame)
+    val landmarker = prepared ?: VideoLandmarker.create(options.modelPath, options.preferGpu, options.perFrame)
     val openNs = System.nanoTime() - open0
     var poseNs = 0L
     try {
@@ -99,7 +99,7 @@ class HybridBoingPose : HybridBoingPoseSpec() {
     } finally {
       landmarker.close()
       // The next video gets a fresh one (no tracking state carried over), loaded while nothing is measured.
-      if (prepared != null) Prepared.refill(options.modelPath, options.preferGpu)
+      if (prepared != null) Prepared.refill(options.modelPath, options.preferGpu, options.perFrame)
     }
   }
 }
@@ -111,19 +111,19 @@ class HybridBoingPose : HybridBoingPoseSpec() {
 private object Prepared {
   private const val TAG = "BoingPose"
   private val loader = Executors.newSingleThreadExecutor { r -> Thread(r, "BoingPosePrepare") }
-  private var key: Pair<String, Boolean>? = null
+  private var key: Triple<String, Boolean, Boolean>? = null
   private var next: Future<VideoLandmarker>? = null
 
   @Synchronized
-  fun prepare(modelPath: String, preferGpu: Boolean) {
-    val k = modelPath to preferGpu
+  fun prepare(modelPath: String, preferGpu: Boolean, perFrame: Boolean) {
+    val k = Triple(modelPath, preferGpu, perFrame)
     if (key == k) {
-      if (next == null) next = load(modelPath, preferGpu)
+      if (next == null) next = load(modelPath, preferGpu, perFrame)
       return
     }
     release()
     key = k
-    next = load(modelPath, preferGpu)
+    next = load(modelPath, preferGpu, perFrame)
   }
 
   @Synchronized
@@ -135,10 +135,10 @@ private object Prepared {
     loader.execute { closeQuietly(f) }
   }
 
-  /** The prepared landmarker for this model (waits while it loads), or null when there's none or it failed to load. */
-  fun take(modelPath: String, preferGpu: Boolean): VideoLandmarker? {
+  /** The prepared landmarker for this model and mode (waits while it loads), or null when there's none or it failed to load. */
+  fun take(modelPath: String, preferGpu: Boolean, perFrame: Boolean): VideoLandmarker? {
     val f = synchronized(this) {
-      if (key != (modelPath to preferGpu)) return null
+      if (key != Triple(modelPath, preferGpu, perFrame)) return null
       next.also { next = null }
     } ?: return null
     return try {
@@ -151,12 +151,12 @@ private object Prepared {
 
   /** Loads the next one, if this model is still the prepared one. */
   @Synchronized
-  fun refill(modelPath: String, preferGpu: Boolean) {
-    if (key == (modelPath to preferGpu) && next == null) next = load(modelPath, preferGpu)
+  fun refill(modelPath: String, preferGpu: Boolean, perFrame: Boolean) {
+    if (key == Triple(modelPath, preferGpu, perFrame) && next == null) next = load(modelPath, preferGpu, perFrame)
   }
 
-  private fun load(modelPath: String, preferGpu: Boolean): Future<VideoLandmarker> =
-    loader.submit<VideoLandmarker> { VideoLandmarker.create(modelPath, preferGpu) }
+  private fun load(modelPath: String, preferGpu: Boolean, perFrame: Boolean): Future<VideoLandmarker> =
+    loader.submit<VideoLandmarker> { VideoLandmarker.create(modelPath, preferGpu, perFrame) }
 
   private fun closeQuietly(f: Future<VideoLandmarker>) {
     try {

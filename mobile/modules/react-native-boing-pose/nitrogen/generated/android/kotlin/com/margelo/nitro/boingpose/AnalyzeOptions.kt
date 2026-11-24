@@ -32,7 +32,10 @@ data class AnalyzeOptions(
   val minInterval: Double,
   @DoNotStrip
   @Keep
-  val preferGpu: Boolean
+  val preferGpu: Boolean,
+  @DoNotStrip
+  @Keep
+  val perFrame: Boolean
 ) {
   /* primary constructor */
 
@@ -44,6 +47,7 @@ data class AnalyzeOptions(
       && Objects.deepEquals(this.to, other.to)
       && Objects.deepEquals(this.minInterval, other.minInterval)
       && Objects.deepEquals(this.preferGpu, other.preferGpu)
+      && Objects.deepEquals(this.perFrame, other.perFrame)
   }
 
   override fun hashCode(): Int {
@@ -52,7 +56,8 @@ data class AnalyzeOptions(
       from,
       to,
       minInterval,
-      preferGpu
+      preferGpu,
+      perFrame
     ).contentDeepHashCode()
   }
 
@@ -64,8 +69,8 @@ data class AnalyzeOptions(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(modelPath: String, from: Double, to: Double, minInterval: Double, preferGpu: Boolean): AnalyzeOptions {
-      return AnalyzeOptions(modelPath, from, to, minInterval, preferGpu)
+    private fun fromCpp(modelPath: String, from: Double, to: Double, minInterval: Double, preferGpu: Boolean, perFrame: Boolean): AnalyzeOptions {
+      return AnalyzeOptions(modelPath, from, to, minInterval, preferGpu, perFrame)
     }
   }
 }

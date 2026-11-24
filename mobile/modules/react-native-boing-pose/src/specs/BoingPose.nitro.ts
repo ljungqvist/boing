@@ -32,6 +32,12 @@ export interface AnalyzeOptions {
   minInterval: number
   /** Try the GPU first (falls back to the CPU). */
   preferGpu: boolean
+  /**
+   * Each frame on its own (MediaPipe IMAGE mode) instead of tracking the person from frame to frame (VIDEO mode).
+   * Tracking smooths the landmarks, which puts them ≈ 10 ms behind fast movement, but it keeps the person through
+   * frames the detector alone would miss (dim light, other people in the picture).
+   */
+  perFrame: boolean
 }
 
 /** Where the time of one `analyzeVideo` call went, for the diagnostics (milliseconds). */
@@ -87,11 +93,11 @@ export interface BoingPose
   extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
   createDetector(modelPath: string, preferGpu: boolean): PoseDetector
   /**
-   * Loads a pose model in the background for the next `analyzeVideo` with the same model and
-   * `preferGpu`, so that call doesn't wait for it. Each such call gets a fresh landmarker (no state
+   * Loads a pose model in the background for the next `analyzeVideo` with the same model, `preferGpu` and
+   * `perFrame`, so that call doesn't wait for it. Each such call gets a fresh landmarker (no state
    * from earlier videos) and a new one is loaded after it, until `releasePrepared`.
    */
-  prepare(modelPath: string, preferGpu: boolean): void
+  prepare(modelPath: string, preferGpu: boolean, perFrame: boolean): void
   /** Frees the model loaded by `prepare`. */
   releasePrepared(): void
   videoInfo(path: string): VideoInfo

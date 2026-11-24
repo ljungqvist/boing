@@ -22,13 +22,15 @@ function setup(opts: {
   /** Seconds (frame clock) each result takes to be read out. */
   readout?: number;
   shortWindow?: boolean;
+  /** Per-frame pose (no tracking) loses the person in every frame: only the tracking pass measures. */
+  perFrameFails?: boolean;
 } = {}) {
   const jumps = opts.jumps ?? [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
   const scene = syntheticFrames({ fps: 240, duration: opts.duration ?? 14, jumps, seed: 5 });
   const size = { width: scene.width, height: scene.height };
   let now = 0;
   const clips: { start: number; stopped: boolean; deleted: boolean; hasJumps?: boolean }[] = [];
-  const analysed: { from: number; to: number }[] = [];
+  const analysed: { from: number; to: number; perFrame: boolean }[] = [];
   const deps: LiveDeps = {
     async startClip() {
       if (opts.recordFails) throw new Error("no recorder");
@@ -44,15 +46,15 @@ function setup(opts: {
         },
       };
     },
-    async analyzeClip(path, from, to) {
+    async analyzeClip(path, from, to, perFrame) {
       if (opts.analyzeFails) throw new Error("decoder failed");
-      analysed.push({ from, to });
+      analysed.push({ from, to, perFrame });
       const start = Number(path.split("@")[1]);
       const k = opts.clipStretch ?? 1;
       const takeoff = jumps.map((j) => j.tTakeoff).find((t) => t - start > from && t - start < to) ?? 0;
       const frames: PoseFrame[] = scene.frames
         .filter((f) => f.t - start >= from && f.t - start <= to)
-        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: drifted(f, takeoff) }));
+        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: perFrame && opts.perFrameFails ? null : drifted(f, takeoff) }));
       return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 }, timing: { poseMs: 900, delegate: "GPU" } };
     },
     deleteClip(path, hasJumps) {
@@ -214,6 +216,20 @@ describe("LiveController", () => {
       expect(pose.t0 - (e.clipStart as number)).toBeGreaterThanOrEqual(w.from - 1e-6);
       expect(pose.t0 - (e.clipStart as number)).toBeLessThan(w.from + 0.05);
     }
+  });
+
+  it("re-measures frame by frame first, and with tracking only where that finds nothing measurable", async () => {
+    const ok = setup();
+    await ok.run();
+    expect(ok.analysed.map((a) => a.perFrame)).toEqual([true, true]);
+    expect(ok.logs.filter((e) => e.pose).every((e) => e.perFrame === true && !e.perFrameTry)).toBe(true);
+
+    const s = setup({ perFrameFails: true });
+    await s.run();
+    expect(s.analysed.map((a) => a.perFrame)).toEqual([true, false, true, false]);
+    const measured = s.logs.filter((e) => e.pose);
+    expect(measured.every((e) => e.perFrame === false && (e.perFrameTry as { error?: string }).error === "no-match")).toBe(true);
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
   });
 
   it("analyses a shorter window once the clock shift is known, if asked to", async () => {

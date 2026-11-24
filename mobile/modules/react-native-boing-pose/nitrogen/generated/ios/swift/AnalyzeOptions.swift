@@ -18,8 +18,8 @@ public extension AnalyzeOptions {
   /**
    * Create a new instance of `AnalyzeOptions`.
    */
-  init(modelPath: String, from: Double, to: Double, minInterval: Double, preferGpu: Bool) {
-    self.init(std.string(modelPath), from, to, minInterval, preferGpu)
+  init(modelPath: String, from: Double, to: Double, minInterval: Double, preferGpu: Bool, perFrame: Bool) {
+    self.init(std.string(modelPath), from, to, minInterval, preferGpu, perFrame)
   }
 
   @inline(__always)
@@ -45,5 +45,10 @@ public extension AnalyzeOptions {
   @inline(__always)
   var preferGpu: Bool {
     return self.__preferGpu
+  }
+  
+  @inline(__always)
+  var perFrame: Bool {
+    return self.__perFrame
   }
 }

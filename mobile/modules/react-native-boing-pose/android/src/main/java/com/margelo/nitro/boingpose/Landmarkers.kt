@@ -21,11 +21,16 @@ const val VALUES = 4
 private const val TAG = "BoingPose"
 
 /**
- * A MediaPipe pose landmarker in VIDEO mode, with strictly increasing timestamps.
+ * A MediaPipe pose landmarker: in VIDEO mode (tracking the person from frame to frame, strictly increasing
+ * timestamps), or with `perFrame` in IMAGE mode (every frame on its own: no tracking lag, no state).
  * The GPU can fail at creation or only at the first inference (some GL drivers): either way
  * it falls back to the CPU and keeps going.
  */
-class VideoLandmarker private constructor(private val model: MappedByteBuffer, preferGpu: Boolean) {
+class VideoLandmarker private constructor(
+  private val model: MappedByteBuffer,
+  preferGpu: Boolean,
+  val perFrame: Boolean,
+) {
   private var delegateUsed: Delegate = if (preferGpu) Delegate.GPU else Delegate.CPU
   private var landmarker: PoseLandmarker = open()
   private var lastMs = -1L
@@ -50,7 +55,7 @@ class VideoLandmarker private constructor(private val model: MappedByteBuffer, p
     val base = BaseOptions.builder().setModelAssetBuffer(model).setDelegate(d).build()
     val options = PoseLandmarker.PoseLandmarkerOptions.builder()
       .setBaseOptions(base)
-      .setRunningMode(RunningMode.VIDEO)
+      .setRunningMode(if (perFrame) RunningMode.IMAGE else RunningMode.VIDEO)
       .setNumPoses(1)
       .build()
     return PoseLandmarker.createFromOptions(context, options)
@@ -61,8 +66,12 @@ class VideoLandmarker private constructor(private val model: MappedByteBuffer, p
     // MediaPipe needs strictly increasing timestamps; a jump backwards (new timeline) continues after the last one.
     val ms = maxOf(Math.round(tSeconds * 1000.0), lastMs + 1)
     lastMs = ms
+    val run = { l: PoseLandmarker ->
+      val image = BitmapImageBuilder(bitmap).build()
+      if (perFrame) l.detect(image) else l.detectForVideo(image, ms)
+    }
     val result = try {
-      landmarker.detectForVideo(BitmapImageBuilder(bitmap).build(), ms)
+      run(landmarker)
     } catch (e: Throwable) {
       if (proven || delegateUsed == Delegate.CPU) throw e
       Log.w(TAG, "Pose inference on the GPU failed, using the CPU", e)
@@ -70,7 +79,7 @@ class VideoLandmarker private constructor(private val model: MappedByteBuffer, p
       delegateUsed = Delegate.CPU
       landmarker = build(Delegate.CPU)
       lastMs = ms
-      landmarker.detectForVideo(BitmapImageBuilder(bitmap).build(), ms)
+      run(landmarker)
     }
     proven = true
     val pose = result.landmarks().firstOrNull() ?: return null
@@ -88,14 +97,14 @@ class VideoLandmarker private constructor(private val model: MappedByteBuffer, p
   fun close() = closeQuietly(landmarker)
 
   companion object {
-    /** Loads the `.task` model; GPU first when asked. */
-    fun create(modelPath: String, preferGpu: Boolean): VideoLandmarker {
+    /** Loads the `.task` model; GPU first when asked; IMAGE mode with `perFrame`. */
+    fun create(modelPath: String, preferGpu: Boolean, perFrame: Boolean = false): VideoLandmarker {
       val file = File(modelPath.removePrefix("file://"))
       if (!file.exists()) throw Error("Pose model not found: $modelPath")
       val buffer = RandomAccessFile(file, "r").use { f ->
         f.channel.map(FileChannel.MapMode.READ_ONLY, 0, f.length())
       }
-      return VideoLandmarker(buffer, preferGpu)
+      return VideoLandmarker(buffer, preferGpu, perFrame)
     }
 
     private fun closeQuietly(l: PoseLandmarker) {

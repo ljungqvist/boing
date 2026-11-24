@@ -121,7 +121,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         modelPath("heavy").then((h) => {
           if (!alive) return;
           measureModel.current = h;
-          boingPose.prepare(toPath(h), !measureOnCpu);
+          boingPose.prepare(toPath(h), !measureOnCpu, true);
         }, () => {});
       })
       .catch((e) => alive && onError(e));
@@ -153,9 +153,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             },
           };
         },
-        async analyzeClip(path, from, to) {
+        async analyzeClip(path, from, to, perFrame) {
           const run = (m: string) =>
-            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu }, () => {});
+            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu, perFrame }, () => {});
           let heavy = measureModel.current;
           let r;
           try {
@@ -167,7 +167,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             boingPose.releasePrepared();
             r = await run(model.current!);
           }
-          const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
+          const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full", mode: perFrame ? "image" : "video" };
           return {
             frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts,
             timing: { ...r.timing, delegate: r.delegate },

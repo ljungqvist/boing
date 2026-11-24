@@ -41,12 +41,15 @@ namespace margelo::nitro::boingpose {
       double minInterval = this->getFieldValue(fieldMinInterval);
       static const auto fieldPreferGpu = clazz->getField<jboolean>("preferGpu");
       jboolean preferGpu = this->getFieldValue(fieldPreferGpu);
+      static const auto fieldPerFrame = clazz->getField<jboolean>("perFrame");
+      jboolean perFrame = this->getFieldValue(fieldPerFrame);
       return AnalyzeOptions(
         modelPath->toStdString(),
         from,
         to,
         minInterval,
-        static_cast<bool>(preferGpu)
+        static_cast<bool>(preferGpu),
+        static_cast<bool>(perFrame)
       );
     }
 
@@ -56,7 +59,7 @@ namespace margelo::nitro::boingpose {
      */
     [[maybe_unused]]
     static jni::local_ref<JAnalyzeOptions::javaobject> fromCpp(const AnalyzeOptions& value) {
-      using JSignature = JAnalyzeOptions(jni::alias_ref<jni::JString>, double, double, double, jboolean);
+      using JSignature = JAnalyzeOptions(jni::alias_ref<jni::JString>, double, double, double, jboolean, jboolean);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -65,7 +68,8 @@ namespace margelo::nitro::boingpose {
         value.from,
         value.to,
         value.minInterval,
-        value.preferGpu
+        value.preferGpu,
+        value.perFrame
       );
     }
   };
