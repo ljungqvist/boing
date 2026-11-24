@@ -350,7 +350,7 @@ export class LiveController {
     } catch {
       // diagnostics only
     }
-    if (path) Object.assign(log, { clip: path.split("/").pop(), clipStart: c.start });
+    if (path) Object.assign(log, { clip: path.split("/").pop() });
     const fallback = () => {
       const m = this.liveMeasurement(live, size);
       m.approximate = accepted(live);
@@ -371,7 +371,9 @@ export class LiveController {
       const pad = this.pad;
       const from = Math.max(0, live.tOff - BEFORE - pad - start);
       const to = live.tOn + AFTER + pad - start;
-      Object.assign(log, { window: { from, to }, clockShift: shift, pad });
+      // clipStart: the clip's t = 0 on the clock of everything logged (tOff, the pose, the window). Until 2026-11-25
+      // the uncorrected start was logged as clipStart, so logged poses seemed to lag their clip by −clockShift.
+      Object.assign(log, { clipStart: start, clipStartUncorrected: c.start, window: { from, to }, clockShift: shift, pad });
       const r = await withTimeout(this.deps.analyzeClip(path, from, to), this.timeoutMs);
       log.ms = Date.now() - t0;
       Object.assign(size, r.size);

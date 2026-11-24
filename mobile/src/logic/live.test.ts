@@ -206,6 +206,14 @@ describe("LiveController", () => {
     expect(measured[1].clockShift as number).toBeCloseTo(-0.2, 1);
     expect(Math.abs(measured[1].offset as number)).toBeLessThan(0.05);
     expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+    // The logged clip start is the one the logged pose is on: pose time = clip time + clipStart.
+    for (const e of measured) {
+      const pose = e.pose as { t0: number; frames: number[][] };
+      const w = e.window as { from: number };
+      expect(e.clipStart as number).toBeCloseTo((e.clipStartUncorrected as number) - (e.clockShift as number), 9);
+      expect(pose.t0 - (e.clipStart as number)).toBeGreaterThanOrEqual(w.from - 1e-6);
+      expect(pose.t0 - (e.clipStart as number)).toBeLessThan(w.from + 0.05);
+    }
   });
 
   it("analyses a shorter window once the clock shift is known, if asked to", async () => {
