@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toSignals } from "./signals";
+import { comY, toSignals } from "./signals";
 import type { Landmark, PoseVideo } from "./types";
 
 function frame(t: number, ys: Record<number, number>, vis = 0.9) {
@@ -53,5 +53,34 @@ describe("toSignals", () => {
   it("rising body gives rising signal", () => {
     const s = toSignals(video([frame(0, { 23: 0.5, 24: 0.5 }), frame(0.1, { 23: 0.4, 24: 0.4 })]));
     expect(s.hip[1]).toBeGreaterThan(s.hip[0]);
+  });
+});
+
+describe("comY", () => {
+  const pose = (y = 0.5) => Array.from({ length: 33 }, () => [0.5, y, 0, 0.9] as Landmark);
+
+  it("is the common y when every point is at it", () => {
+    expect(comY(pose(0.4))).toBeCloseTo(0.4, 9);
+  });
+
+  it("weighs the legs: raising knees, ankles and feet moves it by their share of the body mass", () => {
+    const lm = pose(0.5);
+    for (const i of [25, 26, 27, 28, 29, 30, 31, 32]) lm[i][1] -= 0.1;
+    // de Leva male: per leg the thigh's centre (0.41 of hip → knee) moves 0.41 × 0.1, shank and foot 0.1.
+    const share = 2 * (0.1416 * 0.4095 + 0.0433 + 0.0137);
+    expect(0.5 - comY(lm)).toBeCloseTo(0.1 * share, 6);
+  });
+
+  it("falls back for points the pose doesn't have (the app's logged 13 points), and needs the legs", () => {
+    const lm = pose(0.5);
+    for (const i of [7, 8, 13, 14, 15, 16]) lm[i] = [0, 0, 0, 0];
+    expect(comY(lm)).toBeCloseTo(0.5, 9);
+    lm[25][3] = lm[26][3] = 0.1; // no knee visible
+    expect(Number.isNaN(comY(lm))).toBe(true);
+  });
+
+  it("is in the signals, height-up", () => {
+    const s = toSignals(video([frame(0, {}), frame(0.1, Object.fromEntries(Array.from({ length: 33 }, (_, i) => [i, 0.4])))]));
+    expect(s.com![1] - s.com![0]).toBeCloseTo(0.1 * 200, 6);
   });
 });

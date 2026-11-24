@@ -5,6 +5,8 @@ export interface JumpOptions {
   /** Jumper's body height in metres; only used for the implied-g check. */
   stature?: number;
   g?: number;
+  /** Where the apex comes from: the whole-body centre of mass (default; the hips where it can't be fitted) or the hips. */
+  apex?: "com" | "hip";
 }
 
 export type JumpFlag =
@@ -43,8 +45,10 @@ export interface Jump {
   /** Furthest the hips or feet lay outside the picture around the jump (fraction of the frame). */
   outsideRel: number;
   flags: JumpFlag[];
+  /** Which signal's vertex is the apex: the whole-body centre of mass, or the hips where it couldn't be fitted. */
+  apexFrom: "com" | "hip";
   /** Details for plotting/debugging. */
-  debug: { i0: number; i1: number; floor: number; bodyPx: number; hipFit: Quadratic; toeFit: Quadratic };
+  debug: { i0: number; i1: number; floor: number; bodyPx: number; hipFit: Quadratic; toeFit: Quadratic; comFit: Quadratic | null };
 }
 
 const NOSE_TO_HEEL_PER_STATURE = 0.92;
@@ -110,7 +114,8 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     const hipFit = fitQuadratic(tt, fl.frames.map((i) => s.hip[i]));
     let tOff = quadraticRoots(toeFit, level(fl.before))?.[0] ?? t0;
     let tOn = quadraticRoots(toeFit, level(fl.after))?.[1] ?? t1;
-    const tApex = hipFit.vertex;
+    const comFit = opts.apex === "hip" ? null : centreOfMassFit(s, fl.frames);
+    const tApex = comFit ? comFit.vertex : hipFit.vertex;
 
     // Feet pulled up in the air: the toes plateau and their parabola puts the edges wrong (takeoff late,
     // apex early), while the hips still fly a clean parabola. Then the edges come from the hips: the first
@@ -145,7 +150,8 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
       // Around the flight and the floor windows before and after it.
       outsideRel: s.outside ? windowMax(s.t, s.outside, t0 - 0.6, t1 + 0.6) : 0,
       flags: [],
-      debug: { i0, i1, floor: floorBefore, bodyPx, hipFit, toeFit },
+      apexFrom: comFit ? "com" : "hip",
+      debug: { i0, i1, floor: floorBefore, bodyPx, hipFit, toeFit, comFit },
     };
     if (j.airborneFrames < 8) j.flags.push("few-frames");
     if (hipFit.a >= 0) j.flags.push("not-parabola");
@@ -162,6 +168,22 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     jumps.push(j);
   }
   return jumps;
+}
+
+/** Most of the flight frames that may lack a centre of mass before the apex falls back to the hips. */
+const MAX_COM_MISSING = 0.2;
+
+/**
+ * Parabola through the whole-body centre of mass over the flight frames, or null when too many frames lack one or it
+ * doesn't open downwards. In free flight the centre of mass flies a parabola whatever the limbs do; the hips alone
+ * peak early or late when the knees come up or the legs swing back.
+ */
+function centreOfMassFit(s: Signals, frames: number[]): Quadratic | null {
+  if (!s.com) return null;
+  const ok = frames.filter((i) => Number.isFinite(s.com![i]));
+  if (ok.length < 5 || ok.length < (1 - MAX_COM_MISSING) * frames.length) return null;
+  const q = fitQuadratic(ok.map((i) => s.t[i]), ok.map((i) => s.com![i]));
+  return q.a < 0 ? q : null;
 }
 
 /** Residuals above this fraction of body height: the points don't follow a parabola. */

@@ -30,4 +30,6 @@ export interface Signals {
    * 0 when inside); NaN without a person. The head may leave the picture at the apex.
    */
   outside?: number[];
+  /** Height-up pixels of the whole-body centre of mass (NaN without a usable body); the apex is its vertex. */
+  com?: number[];
 }

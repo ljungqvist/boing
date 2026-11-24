@@ -15,7 +15,7 @@ function setup(opts: {
   stopHangs?: boolean;
   /** The recording's clock runs this much slower around each takeoff (a wrong time base). */
   clipStretch?: number;
-  /** In the recording, the hips drift up this fast (m/s) after takeoff: moving towards a floor-level camera. */
+  /** In the recording, the body above the feet drifts up this fast (m/s) after takeoff: moving towards a floor-level camera. */
   clipDrift?: number;
   jumps?: { tTakeoff: number; height: number }[];
   duration?: number;
@@ -71,7 +71,7 @@ function setup(opts: {
     const v = opts.clipDrift ?? 0;
     if (!v || !f.lm || f.t < takeoff) return f.lm;
     const up = (v * 300 * (f.t - takeoff)) / scene.height;
-    return f.lm.map((p, i) => (i === 23 || i === 24 ? [p[0], p[1] - up, p[2], p[3]] : p) as typeof p);
+    return f.lm.map((p, i) => (i < 27 ? [p[0], p[1] - up, p[2], p[3]] : p) as typeof p);
   };
   const results: Measured[] = [];
   /** For each result: whether `measuring()` had been called for it. */
@@ -269,7 +269,7 @@ describe("LiveController", () => {
   });
 
   it("doesn't show the live height when re-measuring finds the movement unmeasurable", async () => {
-    // In the recording the hips' highest point comes too late for the landing (the person moved
+    // In the recording the body's highest point comes too late for the landing (the person moved
     // towards the camera): the live analysis, with fewer frames, would show a height anyway.
     const s = setup({ clipDrift: 0.5, liveFps: 30 });
     await s.run();

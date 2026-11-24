@@ -158,3 +158,31 @@ describe("findJumps on synthetic CMJs", () => {
     expect(still.hPrimary).toBe(Math.min(still.hRise, still.hFlight));
   });
 });
+
+describe("apex from the whole body", () => {
+  // A 30 cm jump at 60 fps, takeoff at 2 s; the centre of mass flies the parabola.
+  const base = () => {
+    const s = syntheticSignals({ fps: 60, seed: 3 });
+    return { ...s, com: s.hip.map((h) => h - 20) };
+  };
+
+  it("takes the apex from the centre of mass when the hips peak early (knees pulled up late in the flight)", () => {
+    const s = base();
+    const vertex = 2 + Math.sqrt(2 * 9.81 * 0.3) / 9.81;
+    // The hips sink against the centre of mass as the knees come up in the second half of the flight.
+    s.hip = s.hip.map((h, i) => (s.t[i] > vertex && s.t[i] < 2.45 ? h - 300 * 0.08 * ((s.t[i] - vertex) / 0.2) : h));
+    const [com] = findJumps(s);
+    const [hip] = findJumps(s, { apex: "hip" });
+    expect(com.apexFrom).toBe("com");
+    expect(Math.abs(com.tApex - vertex)).toBeLessThan(0.003);
+    expect(hip.tApex).toBeLessThan(vertex - 0.005);
+  });
+
+  it("falls back to the hips without a centre of mass", () => {
+    const s = base();
+    s.com = s.com.map(() => NaN);
+    const [j] = findJumps(s);
+    expect(j.apexFrom).toBe("hip");
+  });
+
+});
