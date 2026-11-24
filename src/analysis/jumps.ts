@@ -63,8 +63,8 @@ const NOSE_TO_HEEL_PER_STATURE = 0.92;
 const MAX_OUTSIDE = 0.03;
 /**
  * Most of the airborne run that may lack hip or toe points. Toe points drop below the visibility limit in fast or
- * dim flight frames while the jump is still measured well (the fits use the frames that have them); a person lost
- * for good shows as missing landing or floor frames, or outside the picture.
+ * dim flight frames while the jump is still measured well: the fits use the frames that have them, and their
+ * residuals and the picture-edge check still apply.
  */
 const MAX_LOST = 0.4;
 /** Takeoff→apex and flight-time heights further apart than this factor aren't one flight. */
