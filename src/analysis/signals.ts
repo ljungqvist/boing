@@ -40,7 +40,8 @@ export function toSignals(video: PoseVideo, opts: SignalOptions = {}): Signals {
   const minVis = opts.minVisibility ?? 0.5;
   const anyOfPair = opts.anyOfPair ?? true;
   const H = video.height;
-  const s: Signals = { t: [], hip: [], toe: [], bodyPx: [], outside: [], com: [] };
+  const W = video.width;
+  const s: Signals = { t: [], hip: [], toe: [], bodyPx: [], outside: [], com: [], foot: [], legPx: [] };
 
   // Mean image-y (0–1, down) of the given points, NaN if any is unusable.
   const meanY = (lm: Landmark[] | null, idx: number[]) => {
@@ -74,8 +75,26 @@ export function toSignals(video: PoseVideo, opts: SignalOptions = {}): Signals {
     s.bodyPx.push((meanY(f.lm, HEELS) - meanY(f.lm, [NOSE])) * H);
     s.outside!.push(outside(f.lm));
     s.com!.push(up(comY(f.lm, minVis)));
+    s.foot!.push(up(lowestY(f.lm, [...HEELS, ...TOES], minVis)));
+    s.legPx!.push(legLength(f.lm, W, H, minVis));
   }
   return s;
+}
+
+/** Image y (0–1, down) of the lowest visible of the given points, NaN if none is visible. */
+function lowestY(lm: Landmark[] | null, idx: number[], minVis: number): number {
+  if (!lm) return NaN;
+  let y = NaN;
+  for (const i of idx) if (lm[i][3] >= minVis && !(lm[i][1] <= y)) y = lm[i][1];
+  return y;
+}
+
+/** Pixels from the hip midpoint to the ankle midpoint, NaN unless both hips and both ankles are visible. */
+function legLength(lm: Landmark[] | null, W: number, H: number, minVis: number): number {
+  if (!lm || [23, 24, 27, 28].some((i) => lm[i][3] < minVis)) return NaN;
+  const dx = ((lm[23][0] + lm[24][0]) / 2 - (lm[27][0] + lm[28][0]) / 2) * W;
+  const dy = ((lm[23][1] + lm[24][1]) / 2 - (lm[27][1] + lm[28][1]) / 2) * H;
+  return Math.hypot(dx, dy);
 }
 
 /** A point the model doesn't give at all (the app's logged pose keeps only some): visibility 0 at (0, 0). */

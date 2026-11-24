@@ -159,7 +159,7 @@ describe("findJumps on synthetic CMJs", () => {
   });
 });
 
-describe("apex from the whole body", () => {
+describe("apex and takeoff from the whole body", () => {
   // A 30 cm jump at 60 fps, takeoff at 2 s; the centre of mass flies the parabola.
   const base = () => {
     const s = syntheticSignals({ fps: 60, seed: 3 });
@@ -185,4 +185,15 @@ describe("apex from the whole body", () => {
     expect(j.apexFrom).toBe("hip");
   });
 
+  it("takes the takeoff from the feet: the first of three frames clearly off the floor, halfway to the frame before", () => {
+    const s = base();
+    // Lowest heel/toe: on the floor (0 px) until 2.02 s, then up fast; legs 300 px, so "clearly off" is > 15 px.
+    const foot = s.t.map((t) => (t < 2.02 ? 0 : 600 * (t - 2.02) + 5));
+    const j = findJumps({ ...s, foot, legPx: s.t.map(() => 300) })[0];
+    const first = s.t.findIndex((t, i) => foot[i] > 15);
+    expect(j.takeoffFrom).toBe("feet");
+    expect(j.tOff).toBeCloseTo((s.t[first - 1] + s.t[first]) / 2, 9);
+    // Without feet the toe parabola's takeoff stays.
+    expect(findJumps(s)[0].takeoffFrom).toBe("toe-parabola");
+  });
 });

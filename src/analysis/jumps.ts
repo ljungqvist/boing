@@ -7,6 +7,11 @@ export interface JumpOptions {
   g?: number;
   /** Where the apex comes from: the whole-body centre of mass (default; the hips where it can't be fitted) or the hips. */
   apex?: "com" | "hip";
+  /**
+   * Where the takeoff comes from: the feet (default; the first of several frames with the lowest heel or toe clearly
+   * off the floor, halfway to the frame before) or where the toe parabola crosses the floor level.
+   */
+  takeoff?: "feet" | "toe-parabola";
 }
 
 export type JumpFlag =
@@ -47,6 +52,8 @@ export interface Jump {
   flags: JumpFlag[];
   /** Which signal's vertex is the apex: the whole-body centre of mass, or the hips where it couldn't be fitted. */
   apexFrom: "com" | "hip";
+  /** Where the takeoff came from: the feet leaving the floor, or the toe parabola where the feet rule found none. */
+  takeoffFrom: "feet" | "toe-parabola";
   /** Details for plotting/debugging. */
   debug: { i0: number; i1: number; floor: number; bodyPx: number; hipFit: Quadratic; toeFit: Quadratic; comFit: Quadratic | null };
 }
@@ -133,6 +140,9 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
       }
     }
 
+    const feetOff = opts.takeoff === "toe-parabola" ? null : feetTakeoff(s, tOff);
+    if (feetOff !== null) tOff = feetOff;
+
     const pxPerMetre = bodyPx / (NOSE_TO_HEEL_PER_STATURE * stature);
     const gImplied = (-2 * hipFit.a) / pxPerMetre;
     const hRise = (g / 2) * (tApex - tOff) ** 2;
@@ -151,6 +161,7 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
       outsideRel: s.outside ? windowMax(s.t, s.outside, t0 - 0.6, t1 + 0.6) : 0,
       flags: [],
       apexFrom: comFit ? "com" : "hip",
+      takeoffFrom: feetOff !== null ? "feet" : "toe-parabola",
       debug: { i0, i1, floor: floorBefore, bodyPx, hipFit, toeFit, comFit },
     };
     if (j.airborneFrames < 8) j.flags.push("few-frames");
@@ -168,6 +179,39 @@ export function findJumps(s: Signals, opts: JumpOptions = {}): Jump[] {
     jumps.push(j);
   }
   return jumps;
+}
+
+/** A foot is off the floor when its lowest point is this many leg lengths (hips → ankles) above the floor. */
+const FEET_LIFT = 0.05;
+/** Frames in a row that must be off the floor for a takeoff. */
+const FEET_RUN = 3;
+/** The feet's takeoff is looked for this far (s) around the toe parabola's; the floor level just before that. */
+const FEET_SEARCH = 0.11;
+const FLOOR_FROM = 0.2, FLOOR_TO = 0.03;
+
+/**
+ * Takeoff from the feet: the first of FEET_RUN frames in a row with the lowest heel or toe more than FEET_LIFT leg
+ * lengths above the floor level, halfway back to the frame before it (which must be on the floor). The toe parabola
+ * crosses the floor too early: the toes leave the floor last and slowly, so the flight parabola through them starts
+ * before the feet are off. Null when the frames don't show it (missing points, no clear floor).
+ */
+export function feetTakeoff(s: Signals, near: number): number | null {
+  if (!s.foot || !s.legPx) return null;
+  const leg = median(s.legPx.filter((x, i) => Number.isFinite(x) && Math.abs(s.t[i] - near) < 1));
+  const ok: number[] = [];
+  for (let i = 0; i < s.t.length; i++) if (Number.isFinite(s.foot[i]) && Math.abs(s.t[i] - near) < 1) ok.push(i);
+  const floorPts = ok.filter((i) => s.t[i] > near - FLOOR_FROM && s.t[i] < near - FLOOR_TO).map((i) => s.foot![i]);
+  if (!(leg > 0) || floorPts.length < 3) return null;
+  const floor = median(floorPts);
+  const up = (i: number) => (s.foot![i] - floor) / leg > FEET_LIFT;
+  for (let k = 1; k + FEET_RUN <= ok.length; k++) {
+    if (Math.abs(s.t[ok[k]] - near) >= FEET_SEARCH) continue;
+    if (up(ok[k - 1])) continue;
+    let run = true;
+    for (let b = 0; b < FEET_RUN; b++) if (!up(ok[k + b])) run = false;
+    if (run) return (s.t[ok[k - 1]] + s.t[ok[k]]) / 2;
+  }
+  return null;
 }
 
 /** Most of the flight frames that may lack a centre of mass before the apex falls back to the hips. */
