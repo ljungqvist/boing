@@ -40,9 +40,9 @@ export interface AnalyzeOptions {
   perFrame: boolean
   /**
    * With `perFrame`: up to this many more landmarkers on the CPU share the frames with the first one (default 0), each
-   * frame to whichever is free; loaded when the call starts, freed when it ends. Fewer on phones with little memory
-   * (Android: none on low-RAM devices, one below 3 GB); ignored in VIDEO mode (tracking needs the frames in order on
-   * one landmarker) and on iOS (not tried on a device yet).
+   * frame to whichever is free; loaded when the call starts, freed when it ends. Fewer where the phone's cores or memory
+   * don't allow them (Android: one per 3 cores beyond 2, one below 3 GB of memory, none on low-RAM devices); ignored in
+   * VIDEO mode (tracking needs the frames in order on one landmarker) and on iOS (not tried on a device yet).
    */
   cpuHelpers?: number
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.util.Log
 import com.margelo.nitro.NitroModules
+import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -15,10 +16,10 @@ import java.util.concurrent.TimeUnit
  * goes to whichever landmarker is free. A helper only takes a frame while the fast one has more frames ahead of it than
  * that helper needs for one, so the last frames never wait on a slower helper: the whole is never slower than the fast
  * one alone, give or take a frame. Results are the same as from the fast one alone, up to the GPU/CPU float difference.
+ * How many helpers a phone gets: `helpersFor`.
  *
  * On a Galaxy Tab A8 (2026-11-25, heavy model, 143 frames): GPU alone 239 ms per frame, + 1 CPU helper 162 ms, + 2 142 ms;
- * CPU alone 451 ms, + 1 CPU helper 260–295 ms. MediaPipe's CPU path alone doesn't fill the cores. Each helper is one
- * more heavy model in memory (≈ 125 MB there), hence `helperLimit`.
+ * CPU alone 451 ms, + 1 CPU helper 260–295 ms. MediaPipe's CPU path alone doesn't fill the cores.
  */
 class SharedInference(fast: VideoLandmarker) : AutoCloseable {
   private class Worker(val landmarker: VideoLandmarker) {
@@ -107,16 +108,51 @@ class SharedInference(fast: VideoLandmarker) : AutoCloseable {
   }
 
   companion object {
+    private const val GB = 1024L * 1024 * 1024
+
     /**
-     * How many of the asked-for CPU helpers this phone gets: none on Android's low-RAM devices, one below 3 GB of
-     * memory, else as asked.
+     * How many of the asked-for CPU helpers this phone gets: the fewer of what its cores and its memory allow.
+     * - Cores: 2 are left for feeding the GPU, decoding and the app (camera preview, UI); each helper uses several more
+     *   (on the 8-core tablet one CPU landmarker alone took 451 ms per frame, two together a frame every ≈ 260 ms, a
+     *   third added only ≈ 10 %), so one helper per 3 further cores: 8 cores → 2, 6 → 1, 4 or fewer → none.
+     * - Memory: each helper is one more heavy model (≈ 125 MB while measuring): none on Android's low-RAM devices, one
+     *   below 3 GB, else as many as the cores allow.
      */
+    fun helpersFor(asked: Int, cores: Int, totalMem: Long, lowRam: Boolean): Int {
+      val byCores = maxOf(0, (cores - 2) / 3)
+      val byMemory = if (lowRam) 0 else if (totalMem < 3 * GB) 1 else Int.MAX_VALUE
+      return minOf(maxOf(0, asked), byCores, byMemory)
+    }
+
+    /** `helpersFor` with this phone's cores and memory. */
     fun helperLimit(asked: Int): Int {
       if (asked <= 0) return 0
       val am = NitroModules.applicationContext?.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return 0
-      if (am.isLowRamDevice) return 0
       val info = ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
-      return if (info.totalMem < 3L * 1024 * 1024 * 1024) minOf(asked, 1) else asked
+      val cores = cpuCores()
+      val n = helpersFor(asked, cores, info.totalMem, am.isLowRamDevice)
+      Log.i("BoingPose", "CPU helpers: $n of $asked ($cores cores, ${"%.1f".format(info.totalMem.toDouble() / GB)} GB" +
+        "${if (am.isLowRamDevice) ", low-RAM device" else ""})")
+      return n
+    }
+
+    /**
+     * The phone's CPU cores, also those switched off for now (`availableProcessors` counts only the ones online, and
+     * phones switch idle cores off): from /sys/devices/system/cpu/present, e.g. "0-7".
+     */
+    private fun cpuCores(): Int {
+      val online = Runtime.getRuntime().availableProcessors()
+      return try {
+        val present = File("/sys/devices/system/cpu/present").readText().trim()
+        // Ranges and single cores, e.g. "0-7" or "0-3,5".
+        val n = present.split(",").sumOf { range ->
+          val ends = range.split("-").map { it.trim().toInt() }
+          ends.last() - ends.first() + 1
+        }
+        maxOf(n, online)
+      } catch (_: Throwable) {
+        online
+      }
     }
   }
 }

@@ -20,9 +20,11 @@ jump (dim light, someone else in the picture), the same frames are measured agai
 recorded meanwhile, so a jump made while measuring isn't seen: one height at a time. After the height
 is out, the next clip starts and the skeleton comes back (green: ready).
 
-On Android, CPU copies of the heavy model share the frames with the GPU one while a jump is measured (two; one on
-phones below 3 GB of memory, none on low-RAM devices): on a slow tablet 239 → 162 ms per frame with one, 142 with two,
-same heights. A copy takes a frame only while that can't delay the end, and is freed after the measurement.
+On Android, CPU copies of the heavy model share the frames with the GPU one while a jump is measured: on a slow tablet
+239 → 162 ms per frame with one, 142 with two, same heights. A copy takes a frame only while that can't delay the end,
+and is freed after the measurement. How many: up to two, as the phone's cores and memory allow (two cores are left for
+the GPU, decoding and the app, then one copy per three cores: 8 cores → 2, 6 → 1, 4 → none; one copy below 3 GB of
+memory, none on low-RAM devices). The log says what the phone got (`CPU helpers: 1 of 2 (8 cores, 2.4 GB)`).
 
 Each measured jump's diagnostics line says where the time went (menu → Diagnostics), e.g.
 `took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU + 1 CPU, 40 frames on those), decode 1.8 alongside, 192 frames`:
