@@ -341,11 +341,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         outputs={outputs}
         constraints={constraints}
         onSessionConfigSelected={onConfig}
-        // Declarative: applied as soon as the camera has started, and again whenever it changes
-        // (setting it through cameraRef.controller before the start was silently lost). Left unset
-        // without a torch: Android throws IllegalStateException when a camera with no flash unit
-        // (the front one) is told to turn its torch off.
-        torchMode={hasTorch ? (lit ? "on" : "off") : undefined}
+        // No torchMode prop: its errors ("Camera is not active" while the camera is still opening)
+        // reach onError and stopped the whole camera. The torch is set by the watchdog above.
         onError={onCameraError}
         resizeMode="cover"
         // The app is portrait only. With the default ("device") a phone lying on the floor reads as
