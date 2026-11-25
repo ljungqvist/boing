@@ -63,7 +63,8 @@ const SENSOR_MS = 10;
 
 /**
  * CPU copies of the pose model sharing the frames of a re-measurement with the first one (Android; fewer on phones with
- * little memory). On a slow tablet (2026-11-25): 239 ms per frame on the GPU alone, 162 with one helper, 142 with two.
+ * few cores or little memory). On a slow tablet (2026-11-25): 239 ms per frame on the GPU alone, 162 with one helper,
+ * 142 with two.
  */
 const CPU_HELPERS = 2;
 
