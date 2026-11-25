@@ -83,17 +83,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const darkDetector = useMemo(() => new DarkDetector(), []);
   const hasTorch = facing === "back" && device?.hasTorch === true;
   const lit = hasTorch && (torch === "on" || (torch === "auto" && dark));
-  const litRef = useRef(false);
-  litRef.current = lit;
   const torchLitRef = useRef(onTorchLit);
   torchLitRef.current = onTorchLit;
-  /** Send the flashlight state to the camera (it may not be running yet: onConfig repeats this). */
-  const applyTorch = useCallback(() => {
-    const c = cameraRef.current?.controller;
-    if (!c || !device?.hasTorch) return;
-    const mode = litRef.current ? "on" : "off";
-    if (c.torchMode !== mode) c.setTorchMode(mode).catch(() => {});
-  }, [device]);
   useEffect(() => {
     if (torch !== "auto") {
       darkDetector.reset();
@@ -101,10 +92,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     }
   }, [torch, darkDetector]);
   useEffect(() => {
-    applyTorch();
     torchLitRef.current?.(lit);
     return () => torchLitRef.current?.(false);
-  }, [lit, applyTorch]);
+  }, [lit]);
   /** Whether frames are checked for darkness: automatic mode, light not on yet. */
   const sense = hasTorch && torch === "auto" && !dark;
 
@@ -283,8 +273,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const onConfig = useCallback((c: CameraSessionConfig) => {
     info.current = { ...info.current, fps: c.selectedFPS ?? 0 };
     onInfo(info.current);
-    applyTorch();
-  }, [onInfo, applyTorch]);
+  }, [onInfo]);
 
   const outputs = useMemo(() => [videoOutput, frameOutput], [videoOutput, frameOutput]);
   const constraints = useMemo(() => [{ fps }, { resolutionBias: videoOutput }], [fps, videoOutput]);
@@ -300,6 +289,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         outputs={outputs}
         constraints={constraints}
         onSessionConfigSelected={onConfig}
+        // Declarative: applied as soon as the camera has started, and again whenever it changes
+        // (setting it through cameraRef.controller before the start was silently lost).
+        torchMode={lit ? "on" : "off"}
         onError={onError}
         resizeMode="cover"
         // The app is portrait only. With the default ("device") a phone lying on the floor reads as
