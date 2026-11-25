@@ -18,8 +18,8 @@ public extension AnalyzeTiming {
   /**
    * Create a new instance of `AnalyzeTiming`.
    */
-  init(openMs: Double, decodeMs: Double, poseMs: Double, totalMs: Double, decoded: Double) {
-    self.init(openMs, decodeMs, poseMs, totalMs, decoded)
+  init(openMs: Double, decodeMs: Double, poseMs: Double, totalMs: Double, decoded: Double, helpers: Double, helperFrames: Double) {
+    self.init(openMs, decodeMs, poseMs, totalMs, decoded, helpers, helperFrames)
   }
 
   @inline(__always)
@@ -45,5 +45,15 @@ public extension AnalyzeTiming {
   @inline(__always)
   var decoded: Double {
     return self.__decoded
+  }
+  
+  @inline(__always)
+  var helpers: Double {
+    return self.__helpers
+  }
+  
+  @inline(__always)
+  var helperFrames: Double {
+    return self.__helperFrames
   }
 }

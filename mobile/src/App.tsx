@@ -14,7 +14,8 @@ import { entriesForClip, type Entry } from "./logic/jumps";
 import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { fpsLabel } from "./logic/camera";
-import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
+import { accepted, cm, jumpsIn, REJECT_TEXT, summarize } from "./logic/measure";
+import { toFrames } from "./logic/pose";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
@@ -24,7 +25,7 @@ import { maxBrightness } from "./native/brightness";
 import { announce, announceFailure, announceMeasuring } from "./native/feedback";
 import { blindColor, type BlindColor } from "./logic/blind";
 import { TORCH_LABEL, nextTorchMode, torchModeOf } from "./logic/torch";
-import { deleteQuietly, modelPath, toPath } from "./native/models";
+import { deleteQuietly, modelPath, toPath, type ModelKind } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
 import { JumpDetails, Row, Sheet } from "./ui/Sheets";
@@ -106,6 +107,16 @@ function Main() {
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
       const next = { ...old, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  /** Remembers the recording's clock shift per camera for the next Start (NaN forgets it): see LiveOptions.clockShift. */
+  const updateClockShift = (camera: string, seconds: number) =>
+    setSettings((old) => {
+      const shifts = { ...(old.clockShift as Record<string, number> | undefined) };
+      if (Number.isFinite(seconds)) shifts[camera] = Math.round(seconds * 1000) / 1000;
+      else delete shifts[camera];
+      const next = { ...old, clockShift: shifts };
       saveSettings(next);
       return next;
     });
@@ -320,7 +331,14 @@ function Main() {
   // (scripts/analyze-on-simulator.sh), as links there wait for an "Open in Boing?" prompt.
   useEffect(() => {
     const handle = async (url: string | null) => {
-      const m = url?.match(/^boing:\/\/analyze\?(path|url)=(.+)$/);
+      // The dev build's scheme is boing-dev.
+      const b = url?.match(/^boing(?:-dev)?:\/\/bench\?url=([^&]+)&cases=(.+)$/);
+      if (b) {
+        // cases: [case, …] or {repeat, cases: [case, …]}
+        const c = JSON.parse(decodeURIComponent(b[2])) as BenchCase[] | { repeat?: number; cases: BenchCase[] };
+        return Array.isArray(c) ? bench(decodeURIComponent(b[1]), c) : bench(decodeURIComponent(b[1]), c.cases, c.repeat);
+      }
+      const m = url?.match(/^boing(?:-dev)?:\/\/analyze\?(path|url)=(.+)$/);
       if (!m) return;
       const target = decodeURIComponent(m[2]);
       testing.current = true;
@@ -376,7 +394,8 @@ function Main() {
             onTorchLit={setTorchLit}
             onTorchReport={setTorchReport}
             measureOnCpu={settings.measureOnCpu === true}
-            shortWindow={settings.shortWindow === true}
+            clockShift={(settings.clockShift as Record<string, number> | undefined)?.[facing]}
+            onClockShift={(x) => updateClockShift(facing, x)}
             onScreenDown={setScreenDown}
             onKeptClip={(id, name) => {
               if (!keep) return;
@@ -540,10 +559,7 @@ function Main() {
           <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
             <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
           </Pressable>
-          <Pressable style={s.wide} onPress={() => updateSettings({ shortWindow: settings.shortWindow !== true })}>
-            <Text style={s.wideText}>Re-measuring window: {settings.shortWindow === true ? "short" : "normal"}</Text>
-          </Pressable>
-          <Text style={s.hint}>For comparing the speed; both apply from the next Start.</Text>
+          <Text style={s.hint}>For comparing the speed; applies from the next Start.</Text>
           {logs.length > 0 && (
             <>
               <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
@@ -658,6 +674,52 @@ function Main() {
       )}
     </View>
   );
+}
+
+/** One timing case of the bench hook (`scripts/bench-on-device.sh`). */
+interface BenchCase {
+  name: string;
+  model?: ModelKind;
+  gpu?: boolean;
+  perFrame?: boolean;
+  cpuHelpers?: number;
+  /** Seconds on the file's timeline. */
+  from: number;
+  to: number;
+}
+
+/**
+ * Testing hook: boing://bench?url=…&cases=[…] (or {"repeat": n, "cases": […]}) downloads a video and times `analyzeVideo` on it for each case, `repeat`
+ * rounds (cases interleaved, so heat and background work hit them alike). Logs `BOING_BENCH {…}` per run.
+ */
+async function bench(url: string, cases: BenchCase[], repeat = 3) {
+  const say = (r: Record<string, unknown>) => console.log(`BOING_BENCH ${JSON.stringify(r)}`);
+  try {
+    const dest = new File(Paths.cache, `bench-${Date.now()}.mp4`);
+    await File.downloadFileAsync(url, dest);
+    const path = toPath(dest.uri);
+    const models: Partial<Record<ModelKind, string>> = {};
+    for (const k of new Set(cases.map((c) => c.model ?? "heavy"))) models[k] = await modelPath(k);
+    say({ start: true, info: boingPose.videoInfo(path), cases: cases.length, repeat });
+    for (let round = 0; round < repeat; round++) {
+      for (const c of cases) {
+        const t0 = Date.now();
+        const r = await boingPose.analyzeVideo(path, {
+          modelPath: toPath(models[c.model ?? "heavy"]!), from: c.from, to: c.to, minInterval: 0, preferGpu: c.gpu ?? true,
+          perFrame: c.perFrame ?? true, cpuHelpers: c.cpuHelpers,
+        }, () => {});
+        // The jumps found in these frames, as the re-measurement would (heights in cm).
+        const jumps = jumpsIn(toFrames(r), { width: r.width, height: r.height })
+          .map((j) => ({ tOff: +j.tOff.toFixed(4), h: +(j.hPrimary * 100).toFixed(2), ok: accepted(j), flags: j.flags }));
+        say({ name: c.name, round, ms: Date.now() - t0, delegate: r.delegate, size: [r.width, r.height], frames: r.times.length,
+          withPose: r.found.filter((x) => x).length, timing: r.timing, jumps });
+      }
+    }
+    deleteQuietly(dest.uri);
+    say({ done: true });
+  } catch (e) {
+    say({ error: String((e as Error)?.message ?? e) });
+  }
 }
 
 /**

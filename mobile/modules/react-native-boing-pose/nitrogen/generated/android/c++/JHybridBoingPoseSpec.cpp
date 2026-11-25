@@ -33,6 +33,7 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include "JAnalyzeTiming.hpp"
 #include "AnalyzeOptions.hpp"
 #include "JAnalyzeOptions.hpp"
+#include <optional>
 #include <functional>
 #include "JFunc_void_double.hpp"
 #include <NitroModules/JNICallable.hpp>

@@ -36,6 +36,7 @@ namespace margelo::nitro::boingpose { struct VideoInfo; }
 #include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 

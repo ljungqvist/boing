@@ -18,8 +18,14 @@ public extension AnalyzeOptions {
   /**
    * Create a new instance of `AnalyzeOptions`.
    */
-  init(modelPath: String, from: Double, to: Double, minInterval: Double, preferGpu: Bool, perFrame: Bool) {
-    self.init(std.string(modelPath), from, to, minInterval, preferGpu, perFrame)
+  init(modelPath: String, from: Double, to: Double, minInterval: Double, preferGpu: Bool, perFrame: Bool, cpuHelpers: Double?) {
+    self.init(std.string(modelPath), from, to, minInterval, preferGpu, perFrame, { () -> bridge.std__optional_double_ in
+      if let __unwrappedValue = cpuHelpers {
+        return bridge.create_std__optional_double_(__unwrappedValue)
+      } else {
+        return .init()
+      }
+    }())
   }
 
   @inline(__always)
@@ -50,5 +56,17 @@ public extension AnalyzeOptions {
   @inline(__always)
   var perFrame: Bool {
     return self.__perFrame
+  }
+  
+  @inline(__always)
+  var cpuHelpers: Double? {
+    return { () -> Double? in
+      if bridge.has_value_std__optional_double_(self.__cpuHelpers) {
+        let __unwrapped = bridge.get_std__optional_double_(self.__cpuHelpers)
+        return __unwrapped
+      } else {
+        return nil
+      }
+    }()
   }
 }

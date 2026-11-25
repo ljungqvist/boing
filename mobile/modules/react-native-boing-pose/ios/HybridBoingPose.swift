@@ -101,7 +101,9 @@ class HybridBoingPose: HybridBoingPoseSpec {
       reader.cancelReading()
       let timing = AnalyzeTiming(
         openMs: openS * 1000, decodeMs: decodeS * 1000, poseMs: poseS * 1000,
-        totalMs: (CFAbsoluteTimeGetCurrent() - start) * 1000, decoded: Double(decoded))
+        totalMs: (CFAbsoluteTimeGetCurrent() - start) * 1000, decoded: Double(decoded),
+        // CPU helpers (options.cpuHelpers) aren't used on iOS yet: not tried on a device.
+        helpers: 0, helperFrames: 0)
       return AnalyzeResult(
         width: width, height: height, times: times, found: found, landmarks: landmarks,
         delegate: landmarker.delegate, timing: timing)

@@ -10,6 +10,7 @@
 #include <fbjni/fbjni.h>
 #include "AnalyzeOptions.hpp"
 
+#include <optional>
 #include <string>
 
 namespace margelo::nitro::boingpose {
@@ -43,13 +44,16 @@ namespace margelo::nitro::boingpose {
       jboolean preferGpu = this->getFieldValue(fieldPreferGpu);
       static const auto fieldPerFrame = clazz->getField<jboolean>("perFrame");
       jboolean perFrame = this->getFieldValue(fieldPerFrame);
+      static const auto fieldCpuHelpers = clazz->getField<jni::JDouble>("cpuHelpers");
+      jni::local_ref<jni::JDouble> cpuHelpers = this->getFieldValue(fieldCpuHelpers);
       return AnalyzeOptions(
         modelPath->toStdString(),
         from,
         to,
         minInterval,
         static_cast<bool>(preferGpu),
-        static_cast<bool>(perFrame)
+        static_cast<bool>(perFrame),
+        cpuHelpers != nullptr ? std::make_optional(cpuHelpers->value()) : std::nullopt
       );
     }
 
@@ -59,7 +63,7 @@ namespace margelo::nitro::boingpose {
      */
     [[maybe_unused]]
     static jni::local_ref<JAnalyzeOptions::javaobject> fromCpp(const AnalyzeOptions& value) {
-      using JSignature = JAnalyzeOptions(jni::alias_ref<jni::JString>, double, double, double, jboolean, jboolean);
+      using JSignature = JAnalyzeOptions(jni::alias_ref<jni::JString>, double, double, double, jboolean, jboolean, jni::alias_ref<jni::JDouble>);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -69,7 +73,8 @@ namespace margelo::nitro::boingpose {
         value.to,
         value.minInterval,
         value.preferGpu,
-        value.perFrame
+        value.perFrame,
+        value.cpuHelpers.has_value() ? jni::JDouble::valueOf(value.cpuHelpers.value()) : nullptr
       );
     }
   };

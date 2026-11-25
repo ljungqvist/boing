@@ -39,14 +39,19 @@ export const accepted = (j: Jump) => !j.flags.some((f) => REJECT.includes(f));
 const REFINABLE: JumpFlag[] = ["few-frames", "inconsistent", "poor-fit"];
 export const refinable = (j: Jump) => j.flags.filter((f) => REJECT.includes(f)).every((f) => REFINABLE.includes(f));
 
-/** Seconds analysed again around a live jump: before takeoff (floor level, countermovement) … */
-export const BEFORE = 0.8;
-/** … and after landing … */
-export const AFTER = 0.6;
-/** … plus this much on both sides, because the live↔recording time mapping is approximate. */
+/**
+ * Seconds analysed again around a live jump: before takeoff (floor level, countermovement) …
+ * (0.8 until 2026-11-25. The shorter window keeps the heights, with a third fewer frames to measure; a few more jumps
+ * are rejected. Keep the frames after the landing: they are what rejects bad jumps, and with less than 0.4 + 0.1 s of
+ * them wrong heights get through.)
+ */
+export const BEFORE = 0.6;
+/** … and after landing (0.6 until 2026-11-25) … */
+export const AFTER = 0.4;
+/** … plus this much on both sides, because the live↔recording time mapping is approximate … */
 export const PAD = 0.3;
-/** `PAD` once the recording's clock shift is known (`LiveOptions.shortWindow`): what's left is the
- * live analysis's own error, ≈ ±0.05 s at 60 fps. */
+/** … or this much once the recording's clock shift is known (learned, or remembered for the camera): what's left is
+ * the live analysis's own error, ≈ ±0.05 s at 60 fps. */
 export const PAD_SHORT = 0.1;
 /** Longer in the air isn't a jump (≈ 1.2 m): not worth re-measuring, it only blocks the app. */
 export const MAX_FLIGHT = 1;

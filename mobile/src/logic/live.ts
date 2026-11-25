@@ -51,6 +51,11 @@ export interface LiveEvents {
    * meanwhile) or is needed again (`false`: the next recording runs).
    */
   paused?(on: boolean): void;
+  /**
+   * The recording's clock shift as learned so far (after each re-measured jump that taught something): worth
+   * remembering for this camera and passing as `LiveOptions.clockShift` next time. NaN: the remembered one was wrong.
+   */
+  clockShift?(seconds: number): void;
 }
 
 export interface LiveOptions {
@@ -65,8 +70,11 @@ export interface LiveOptions {
   rotateSecondsInView?: number;
   /** Give up re-measuring a jump after this many milliseconds. */
   timeoutMs?: number;
-  /** Once the recording's clock shift is known, pad the window by `PAD_SHORT` instead of `PAD` (A/B test). */
-  shortWindow?: boolean;
+  /**
+   * The recording's clock shift remembered for this camera (`LiveEvents.clockShift`), if any: then even the first jump
+   * gets the window padded by `PAD_SHORT` instead of `PAD`. If that jump can't be measured, it's forgotten again.
+   */
+  clockShift?: number;
   /**
    * Re-measure with the pose of each frame on its own first (default): tracking smooths the landmarks, which
    * puts them ≈ 10 ms behind fast movement and drags the feet at takeoff. Where that finds no measurable jump
@@ -115,13 +123,14 @@ export class LiveController {
   private readonly rotateSeconds: number;
   private readonly rotateSecondsInView: number;
   private readonly timeoutMs: number;
-  private readonly shortWindow: boolean;
   private readonly perFrame: boolean;
   /**
    * How far the re-measured takeoffs came out from the live ones (seconds, latest last). The recording
    * starts later than `OpenClip.start` says (≈ 0.15–0.2 s on the phone), the same for every clip.
    */
-  private readonly offsets: number[] = [];
+  private offsets: number[] = [];
+  /** `offsets` holds only the remembered clock shift (`LiveOptions.clockShift`), not one learned in this run. */
+  private seeded = false;
   /** When each jump waiting for its re-measured height was seen (`Date.now()`). */
   private readonly seenAt = new Map<Jump, number>();
   /** Jumps waiting for their re-measured height. */
@@ -137,7 +146,10 @@ export class LiveController {
     this.rotateSeconds = opts.rotateSeconds ?? 15;
     this.rotateSecondsInView = opts.rotateSecondsInView ?? 60;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
-    this.shortWindow = opts.shortWindow ?? false;
+    if (opts.clockShift !== undefined && Number.isFinite(opts.clockShift)) {
+      this.offsets.push(opts.clockShift);
+      this.seeded = true;
+    }
     this.perFrame = opts.perFrame ?? true;
   }
 
@@ -147,9 +159,21 @@ export class LiveController {
     return o.length ? o[Math.floor(o.length / 2)] : 0;
   }
 
-  /** Padding of the re-measuring window: short only once the clock shift is known. */
+  /** Padding of the re-measuring window: short once the clock shift is known. */
   private get pad(): number {
-    return this.shortWindow && this.offsets.length > 0 ? PAD_SHORT : PAD;
+    return this.offsets.length > 0 ? PAD_SHORT : PAD;
+  }
+
+  /**
+   * A jump measured with only the remembered clock shift failed: the shift may be wrong (another phone setting, an
+   * update), so the next jump gets the full padding and learns it again.
+   */
+  private distrustSeed(log: Record<string, unknown>) {
+    if (!this.seeded) return;
+    this.seeded = false;
+    this.offsets = [];
+    log.clockShiftForgotten = true;
+    this.events.clockShift?.(NaN);
   }
 
   /** Live analysis rate (frames per second over the last second). */
@@ -409,6 +433,7 @@ export class LiveController {
       log.pose = compactPose(frames, r.size);
       if (!jump) {
         log.error = "no-match";
+        this.distrustSeed(log);
         log.found = found.map((j) => ({ offset: j.tOff - live.tOff, h: j.hPrimary, frames: j.airborneFrames, flags: j.flags }));
         return fallback();
       }
@@ -417,10 +442,16 @@ export class LiveController {
         offset: jump.tOff - live.tOff, flags: jump.flags,
       });
       // Learn from accepted jumps only (offset is what's left after the shift already applied).
-      if (!jump.flags.some((f) => REJECT.includes(f))) this.offsets.push(shift + jump.tOff - live.tOff);
+      if (!jump.flags.some((f) => REJECT.includes(f))) {
+        this.offsets.push(shift + jump.tOff - live.tOff);
+        // The remembered shift is one vote among the learned ones until five are learned.
+        this.seeded = false;
+        this.events.clockShift?.(this.clockShift);
+      }
       const measured: Measured = { jump, frames, size: r.size, fps, refined: true, approximate: false, framesFirst: live.airborneFrames };
       if (jump.flags.some((f) => REJECT.includes(f))) {
         log.error = "rejected";
+        this.distrustSeed(log);
         // The movement itself can't be measured (moved, left the picture, unsteady points): the live
         // result of the same movement isn't shown instead. A doubtful recording (time base) falls back.
         if (jump.flags.some((f) => MOVEMENT_REJECT.includes(f))) return { measured, log };

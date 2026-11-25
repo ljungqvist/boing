@@ -175,12 +175,14 @@ class FrameReader(
   toUs: Long,
   rotation: Int,
   want: (ptsUs: Long) -> Boolean,
+  /** Frames decoded ahead of the caller (≈ 2 MB each at 540×960): more when several landmarkers take them. */
+  ahead: Int = AHEAD,
 ) : AutoCloseable {
   class Frame(val ptsUs: Long, val bitmap: Bitmap)
 
   private class Failed(val error: Throwable)
 
-  private val queue = ArrayBlockingQueue<Any>(AHEAD)
+  private val queue = ArrayBlockingQueue<Any>(ahead)
   @Volatile private var closed = false
   /** Time spent decoding and converting (not waiting for the caller), nanoseconds. */
   @Volatile var busyNs = 0L
@@ -226,7 +228,6 @@ class FrameReader(
   }
 
   private companion object {
-    /** Frames decoded ahead of the caller (≈ 2 MB each at 540×960). */
     const val AHEAD = 3
     val END = Any()
   }

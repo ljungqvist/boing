@@ -13,20 +13,26 @@ Design: `../docs/superpowers/specs/2026-10-14-react-native-app-design.md`.
 ## Live mode
 
 The camera records in clips while the full model follows you live. When a jump is seen, the live
-analysis pauses (no skeleton, "Measuring · not ready"), the clip ends 0.9 s after landing, and the jump is
-measured again from every recorded frame with the heavy model (loaded ahead of time). Nothing is
+analysis pauses (no skeleton, "Measuring · not ready"), the clip ends 0.5 s after landing, and the jump is
+measured again from every recorded frame with the heavy model (loaded ahead of time), each frame on its own,
+from 0.6 s before the takeoff to 0.4 s after the landing (plus the padding below). Where that finds no measurable
+jump (dim light, someone else in the picture), the same frames are measured again with tracking. Nothing is
 recorded meanwhile, so a jump made while measuring isn't seen: one height at a time. After the height
 is out, the next clip starts and the skeleton comes back (green: ready).
 
+On Android, CPU copies of the heavy model share the frames with the GPU one while a jump is measured (two; one on
+phones below 3 GB of memory, none on low-RAM devices): on a slow tablet 239 → 162 ms per frame with one, 142 with two,
+same heights. A copy takes a frame only while that can't delay the end, and is freed after the measurement.
+
 Each measured jump's diagnostics line says where the time went (menu → Diagnostics), e.g.
-`took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU), decode 1.8 alongside, 192 frames`: waiting for the
-clip to end, loading the model, the pose model on all frames, and decoding (overlapped with the pose
-model). To compare, menu →
-"Re-measure jumps on: GPU / CPU" and "Re-measuring window: normal / short" (from the next Start).
-The recording starts ≈ 0.15–0.2 s later than the live clock says; after the first re-measured jump the
-app corrects for it (`clockShift` in the log, `offset` is then what's left). "Short" pads the window by
-0.1 s instead of 0.3 s once that correction is known (≈ 16 % fewer frames). A live "jump" over 1 s in the air isn't
-re-measured (a false alarm, not a jump).
+`took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU + 1 CPU, 40 frames on those), decode 1.8 alongside, 192 frames`:
+waiting for the clip to end, loading the model, the pose model on all frames (and how many the CPU copies took), and
+decoding (overlapped with the pose model). To compare, menu → "Re-measure jumps on: GPU / CPU" (from the next Start).
+The recording starts ≈ 0.15–0.2 s later than the live clock says (steady for a phone and camera); after a
+re-measured jump the app corrects for it (`clockShift` in the log, `offset` is then what's left) and remembers it for
+the camera. With the correction known, the window is padded by 0.1 s on both sides, else by 0.3 s (the first jump on
+a new phone, or after the remembered shift failed a jump: then it's forgotten, `clockShiftForgotten` in the log).
+A live "jump" over 1 s in the air isn't re-measured (a false alarm, not a jump).
 
 Every jump shown as "Measuring…" ends with an announcement: its height, or "Couldn't determine the
 height" (also when re-measuring timed out or the recording couldn't be read).
@@ -192,11 +198,15 @@ the menu.
 npm test                    # (repo root) unit tests, including mobile/src/logic
 npm run typecheck           # (mobile/)
 scripts/analyze-on-device.sh <video.mp4>   # analyse a file with the installed app (adb), prints JSON
+scripts/bench-on-device.sh <video.mp4> '<cases>'   # time the re-measurement per setting (adb), prints JSON
 ```
 
 `analyze-on-device.sh` serves the video from this computer over `adb reverse`, opens the app's
 `boing://analyze?url=http://localhost:8765/…` link (the app downloads and analyses it) and reads the
 result from the log (`BOING_FILE …`). Live jumps log `BOING_LIVE` and `BOING_LOG` lines.
+`bench-on-device.sh` opens `boing://bench?url=…&cases=…` the same way: the app runs `analyzeVideo` on the file for each
+case (model, GPU or CPU, per frame or tracking, CPU helpers, window) and logs the timing and the heights found
+(`BOING_BENCH …`); the script's header describes the cases. Dev builds take `boing-dev://` links (`PKG=info.ljungqvist.boing.dev`).
 
 On an Apple-silicon Mac, use an Android 13 emulator image with `-gpu host`: newer images advertise
 CPU features (SME) the hypervisor doesn't provide, and MediaPipe's CPU path crashes (SIGILL).

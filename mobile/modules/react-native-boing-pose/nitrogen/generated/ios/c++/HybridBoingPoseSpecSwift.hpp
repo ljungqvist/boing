@@ -32,6 +32,7 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include <vector>
 #include "AnalyzeTiming.hpp"
 #include "AnalyzeOptions.hpp"
+#include <optional>
 #include <functional>
 
 #include "NitroBoingPose-Swift-Cxx-Umbrella.hpp"
