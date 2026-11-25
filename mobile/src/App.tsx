@@ -101,6 +101,7 @@ function Main() {
   /** The back camera's flashlight: off, automatic or on (saved). */
   const torch = torchModeOf(settings.torch);
   const [torchLit, setTorchLit] = useState(false);
+  const [torchReport, setTorchReport] = useState("");
   const keep = keepActive(settings);
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
@@ -373,6 +374,7 @@ function Main() {
             keep={keepNow && keep}
             torch={torch}
             onTorchLit={setTorchLit}
+            onTorchReport={setTorchReport}
             measureOnCpu={settings.measureOnCpu === true}
             shortWindow={settings.shortWindow === true}
             onScreenDown={setScreenDown}
@@ -531,6 +533,7 @@ function Main() {
           <Row label="Version" value={VERSION} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
           {facing === "back" && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
+          {facing === "back" && live && torchReport !== "" && <Row label="Flashlight, camera says" value={torchReport} />}
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
           {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}

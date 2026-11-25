@@ -52,13 +52,15 @@ interface Props {
   torch?: TorchMode;
   /** The flashlight is lit (or not): for the button. */
   onTorchLit?: (lit: boolean) => void;
+  /** What the camera says about the flashlight, for the Settings sheet (diagnostics). */
+  onTorchReport?: (text: string) => void;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown, torch = "off", onTorchLit }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown, torch = "off", onTorchLit, onTorchReport }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -95,6 +97,34 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     torchLitRef.current?.(lit);
     return () => torchLitRef.current?.(false);
   }, [lit]);
+  const litRef = useRef(lit);
+  litRef.current = lit;
+  const reportRef = useRef(onTorchReport);
+  reportRef.current = onTorchReport;
+  // Watchdog: the camera may drop the torch when it reconfigures (rebinding), and the prop only
+  // acts on changes. Every 1.5 s compare with what the camera reports and set it again if needed.
+  // The outcome also goes to the Settings sheet, to see why a light stays off.
+  useEffect(() => {
+    const report = (t: string) => reportRef.current?.(t);
+    if (facing !== "back") return report("");
+    if (!device) return;
+    if (!device.hasTorch) return report("this camera reports no flash unit");
+    const tick = () => {
+      const c = cameraRef.current?.controller;
+      const want = litRef.current ? "on" : "off";
+      if (!c) return report("camera not ready yet");
+      let have: string;
+      try { have = c.torchMode; } catch (e) { return report(`can't read: ${String((e as Error)?.message ?? e)}`); }
+      if (have === want) return report(`${have} (as wanted)`);
+      c.setTorchMode(want).then(
+        () => report(`set ${want} (was ${have})`),
+        (e) => report(`setting ${want} failed: ${String((e as Error)?.message ?? e)}`),
+      );
+    };
+    tick();
+    const id = setInterval(tick, 1500);
+    return () => clearInterval(id);
+  }, [facing, device]);
   /** Whether frames are checked for darkness: automatic mode, light not on yet. */
   const sense = hasTorch && torch === "auto" && !dark;
 
@@ -272,7 +302,10 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
 
   /** The flashlight failing (no flash unit, busy) must never stop the camera. */
   const onCameraError = useCallback((e: Error) => {
-    if (/torch|flash/i.test(String(e?.message ?? e))) return;
+    if (/torch|flash/i.test(String(e?.message ?? e))) {
+      reportRef.current?.(`camera error: ${String(e?.message ?? e)}`);
+      return;
+    }
     onError(e);
   }, [onError]);
 
