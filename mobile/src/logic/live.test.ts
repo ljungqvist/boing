@@ -21,7 +21,8 @@ function setup(opts: {
   duration?: number;
   /** Seconds (frame clock) each result takes to be read out. */
   readout?: number;
-  shortWindow?: boolean;
+  /** The clock shift remembered for the camera (LiveOptions.clockShift). */
+  clockShift?: number;
   /** Per-frame pose (no tracking) loses the person in every frame: only the tracking pass measures. */
   perFrameFails?: boolean;
 } = {}) {
@@ -83,6 +84,7 @@ function setup(opts: {
   let measuring = 0;
   const paused: boolean[] = [];
   const statuses = new Set<string>();
+  const shifts: number[] = [];
   const live = new LiveController(deps, {
     status: (st) => statuses.add(st.text),
     paused: (on) => paused.push(on),
@@ -95,7 +97,8 @@ function setup(opts: {
       while (now < until && !ended) await Promise.resolve();
     },
     log: (e) => logs.push(e),
-  }, { shortWindow: opts.shortWindow });
+    clockShift: (x) => shifts.push(x),
+  }, { clockShift: opts.clockShift });
   /** The scene is over: nothing is read out any more. */
   let ended = false;
   async function run() {
@@ -111,7 +114,7 @@ function setup(opts: {
     ended = true;
     await live.stop();
   }
-  return { live, run, results, afterMeasuring, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
+  return { live, run, results, afterMeasuring, clips, analysed, logs, pendingAtResult, paused, statuses, shifts, now: () => now, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
@@ -232,13 +235,40 @@ describe("LiveController", () => {
     expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
   });
 
-  it("analyses a shorter window once the clock shift is known, if asked to", async () => {
-    const s = setup({ startLag: 0.2, shortWindow: true });
+  it("analyses a shorter window once the clock shift is known, and reports the shift to remember", async () => {
+    const s = setup({ startLag: 0.2 });
     await s.run();
     const [first, second] = s.analysed.map((w) => w.to - w.from);
     // The first jump still gets the full window; the second 0.4 s less.
     expect(first - second).toBeGreaterThan(0.3);
     expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+    // Learned from both jumps (the recording starts late: the live takeoff runs ahead of it).
+    expect(s.shifts).toHaveLength(2);
+    expect(s.shifts[0]).toBeCloseTo(-0.2, 1);
+  });
+
+  it("uses a remembered clock shift from the first jump on", async () => {
+    const fresh = setup({ startLag: 0.2 });
+    await fresh.run();
+    const s = setup({ startLag: 0.2, clockShift: -0.2 });
+    await s.run();
+    // The first jump's window is already the short one.
+    const len = (w: { from: number; to: number }) => w.to - w.from;
+    expect(len(fresh.analysed[0]) - len(s.analysed[0])).toBeCloseTo(0.4, 2);
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+    expect(s.logs.some((e) => e.clockShiftForgotten)).toBe(false);
+  });
+
+  it("forgets a remembered clock shift that's wrong once its jump can't be measured", async () => {
+    // Remembered +1 s, but the recording starts 0.2 s late: the first window misses the takeoff.
+    const s = setup({ startLag: 0.2, clockShift: 1 });
+    await s.run();
+    const measured = s.logs.filter((e) => "clipStart" in e);
+    expect(measured[0].clockShiftForgotten).toBe(true);
+    expect(s.shifts[0]).toBeNaN();
+    // The next jump gets the full window (it starts earlier than the first one's short window would) and is measured.
+    expect(measured[1].pad).toBe(0.3);
+    expect(s.results[1].refined && accepted(s.results[1].jump)).toBe(true);
   });
 
   it("falls back to the live result, marked approximate, when re-measuring fails", async () => {

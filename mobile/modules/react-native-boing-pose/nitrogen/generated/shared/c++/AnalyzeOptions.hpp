@@ -31,6 +31,7 @@
 
 
 #include <string>
+#include <optional>
 
 namespace margelo::nitro::boingpose {
 
@@ -45,10 +46,11 @@ namespace margelo::nitro::boingpose {
     double minInterval     SWIFT_PRIVATE;
     bool preferGpu     SWIFT_PRIVATE;
     bool perFrame     SWIFT_PRIVATE;
+    std::optional<double> cpuHelpers     SWIFT_PRIVATE;
 
   public:
     AnalyzeOptions() = default;
-    explicit AnalyzeOptions(std::string modelPath, double from, double to, double minInterval, bool preferGpu, bool perFrame): modelPath(modelPath), from(from), to(to), minInterval(minInterval), preferGpu(preferGpu), perFrame(perFrame) {}
+    explicit AnalyzeOptions(std::string modelPath, double from, double to, double minInterval, bool preferGpu, bool perFrame, std::optional<double> cpuHelpers): modelPath(modelPath), from(from), to(to), minInterval(minInterval), preferGpu(preferGpu), perFrame(perFrame), cpuHelpers(cpuHelpers) {}
 
   public:
     friend bool operator==(const AnalyzeOptions& lhs, const AnalyzeOptions& rhs) = default;
@@ -69,7 +71,8 @@ namespace margelo::nitro {
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "to"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "minInterval"))),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "preferGpu"))),
-        JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "perFrame")))
+        JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "perFrame"))),
+        JSIConverter<std::optional<double>>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "cpuHelpers")))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::boingpose::AnalyzeOptions& arg) {
@@ -80,6 +83,7 @@ namespace margelo::nitro {
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "minInterval"), JSIConverter<double>::toJSI(runtime, arg.minInterval));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "preferGpu"), JSIConverter<bool>::toJSI(runtime, arg.preferGpu));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "perFrame"), JSIConverter<bool>::toJSI(runtime, arg.perFrame));
+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "cpuHelpers"), JSIConverter<std::optional<double>>::toJSI(runtime, arg.cpuHelpers));
       return obj;
     }
     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
@@ -96,6 +100,7 @@ namespace margelo::nitro {
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "minInterval")))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "preferGpu")))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "perFrame")))) return false;
+      if (!JSIConverter<std::optional<double>>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "cpuHelpers")))) return false;
       return true;
     }
   };

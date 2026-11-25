@@ -2,6 +2,7 @@ package com.margelo.nitro.boingpose
 
 import android.util.Log
 import com.margelo.nitro.core.Promise
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import kotlin.math.roundToLong
@@ -35,8 +36,12 @@ class HybridBoingPose : HybridBoingPoseSpec() {
     val open0 = System.nanoTime()
     val prepared = Prepared.take(options.modelPath, options.preferGpu, options.perFrame)
     val landmarker = prepared ?: VideoLandmarker.create(options.modelPath, options.preferGpu, options.perFrame)
+    // IMAGE mode: frames don't depend on each other, so CPU landmarkers can take frames alongside the first one.
+    val helpersAsked = if (options.perFrame) SharedInference.helperLimit((options.cpuHelpers ?: 0.0).toInt()) else 0
     val openNs = System.nanoTime() - open0
     var poseNs = 0L
+    var helpers = 0
+    var helperFrames = 0
     try {
       val from = maxOf(0.0, options.from)
       val to = minOf(options.to, duration + 1.0)
@@ -56,25 +61,80 @@ class HybridBoingPose : HybridBoingPoseSpec() {
         if (ok) lastUs = pts
         ok
       }
-      val reader = FrameReader(file, fromUs, toUs, rotation, want)
+      val reader = FrameReader(file, fromUs, toUs, rotation, want, ahead = 3 + 2 * helpersAsked)
+      val progress = { t: Double ->
+        val p = if (to > from) (t - from) / (to - from) else 1.0
+        if (p - reported >= 0.01) {
+          reported = p
+          onProgress(p.coerceIn(0.0, 1.0))
+        }
+      }
+      val add = { t: Double, lm: DoubleArray? ->
+        times.add(t)
+        found.add(if (lm != null) 1.0 else 0.0)
+        landmarks.add(lm ?: DoubleArray(LANDMARKS * VALUES))
+      }
       try {
-        while (true) {
-          val frame = reader.next() ?: break
-          val bitmap = frame.bitmap
-          width = bitmap.width.toDouble()
-          height = bitmap.height.toDouble()
-          val t = frame.ptsUs / 1e6
-          val p0 = System.nanoTime()
-          val lm = landmarker.detect(bitmap, t)
-          poseNs += System.nanoTime() - p0
-          times.add(t)
-          found.add(if (lm != null) 1.0 else 0.0)
-          landmarks.add(lm ?: DoubleArray(LANDMARKS * VALUES))
-          val p = if (to > from) (t - from) / (to - from) else 1.0
-          if (p - reported >= 0.01) {
-            reported = p
-            onProgress(p.coerceIn(0.0, 1.0))
+        if (helpersAsked == 0) {
+          while (true) {
+            val frame = reader.next() ?: break
+            val bitmap = frame.bitmap
+            width = bitmap.width.toDouble()
+            height = bitmap.height.toDouble()
+            val t = frame.ptsUs / 1e6
+            val p0 = System.nanoTime()
+            val lm = landmarker.detect(bitmap, t)
+            poseNs += System.nanoTime() - p0
+            add(t, lm)
+            progress(t)
           }
+        } else {
+          // The first landmarker starts at once; the CPU helpers join as they load (≈ 0.3 s each on a slow tablet).
+          // Results are collected in frame order.
+          val shared = SharedInference(landmarker)
+          Thread({
+            repeat(helpersAsked) {
+              val h = try {
+                VideoLandmarker.create(options.modelPath, false, true)
+              } catch (e: Throwable) {
+                Log.w("BoingPose", "CPU helper failed to load", e)
+                return@Thread
+              }
+              if (!shared.add(h)) {
+                h.close()
+                return@Thread
+              }
+            }
+          }, "BoingPoseHelpers").start()
+          val pending = ArrayList<Pair<Double, Future<DoubleArray?>>>()
+          var prevUs = -1L
+          var gapUs = 0.0
+          val p0 = System.nanoTime()
+          try {
+            while (true) {
+              val frame = reader.next() ?: break
+              width = frame.bitmap.width.toDouble()
+              height = frame.bitmap.height.toDouble()
+              val t = frame.ptsUs / 1e6
+              if (prevUs >= 0) gapUs = if (gapUs == 0.0) (frame.ptsUs - prevUs).toDouble() else 0.9 * gapUs + 0.1 * (frame.ptsUs - prevUs)
+              prevUs = frame.ptsUs
+              val left = if (gapUs > 0) (toUs - frame.ptsUs) / gapUs else Double.MAX_VALUE
+              pending.add(t to shared.submit(frame.bitmap, t, left))
+              progress(t)
+            }
+            for ((t, f) in pending) {
+              add(t, try {
+                f.get()
+              } catch (e: ExecutionException) {
+                throw e.cause ?: e
+              })
+            }
+          } finally {
+            shared.close()
+          }
+          poseNs = System.nanoTime() - p0
+          helpers = shared.helpers
+          helperFrames = shared.helperFrames
         }
       } finally {
         reader.close()
@@ -94,6 +154,8 @@ class HybridBoingPose : HybridBoingPoseSpec() {
           poseMs = poseNs / 1e6,
           totalMs = (System.nanoTime() - start) / 1e6,
           decoded = reader.decoded.toDouble(),
+          helpers = helpers.toDouble(),
+          helperFrames = helperFrames.toDouble(),
         ),
       )
     } finally {

@@ -44,8 +44,10 @@ interface Props {
   onKeptClip?: (id: string, name: string) => void;
   /** Re-measure on the CPU instead of the GPU (debug setting, to compare the speed). */
   measureOnCpu?: boolean;
-  /** Re-measure a shorter window once the recording's clock shift is known (debug setting, A/B test). */
-  shortWindow?: boolean;
+  /** The recording's clock shift remembered for this camera (`LiveOptions.clockShift`), if any. */
+  clockShift?: number;
+  /** A clock shift to remember for this camera (NaN: forget the remembered one). */
+  onClockShift?: (seconds: number) => void;
   /** The screen turned to face below the horizon (`true`) or above it again (blind mode). */
   onScreenDown?: (down: boolean) => void;
   /** The back camera's flashlight: off, automatic (when the picture is dark) or always on. */
@@ -57,8 +59,14 @@ interface Props {
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
+/**
+ * CPU copies of the pose model sharing the frames of a re-measurement with the first one (Android; fewer on phones with
+ * little memory). On a slow tablet (2026-11-25): 239 ms per frame on the GPU alone, 162 with one helper, 142 with two.
+ */
+const CPU_HELPERS = 2;
+
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown, torch = "off", onTorchLit }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, clockShift, onClockShift, onScreenDown, torch = "off", onTorchLit }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -66,6 +74,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const model = useRef<string | null>(null);
   /** Model for re-measuring jumps from the recording: heavy (steadier feet). */
   const measureModel = useRef<string | null>(null);
+  const clockShiftRef = useRef(onClockShift);
+  clockShiftRef.current = onClockShift;
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
   const cameraRef = useRef<CameraRef>(null);
   const maxFps = useMemo(() => (device ? Math.max(0, ...device.supportedFPSRanges.map((r) => r.max)) : 0), [device]);
@@ -190,8 +200,10 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
           };
         },
         async analyzeClip(path, from, to, perFrame) {
-          const run = (m: string) =>
-            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu, perFrame }, () => {});
+          // Frame by frame, CPU copies of the model share the frames with the first one (fewer on phones with little memory).
+          const run = (m: string) => boingPose.analyzeVideo(path, {
+            modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu, perFrame, cpuHelpers: perFrame ? CPU_HELPERS : 0,
+          }, () => {});
           let heavy = measureModel.current;
           let r;
           try {
@@ -231,9 +243,10 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         log: (e) => eventsRef.current.log?.(e),
         // While a jump is measured, no pose on the camera frames: the phone's power goes to the measurement.
         paused: (on) => { detector.minInterval = on ? Infinity : 0; },
+        clockShift: (x) => clockShiftRef.current?.(x),
       },
       // The heavy model takes several seconds per jump on a mid-range phone.
-      { timeoutMs: 60_000, shortWindow },
+      { timeoutMs: 60_000, clockShift },
     );
   }, [detector, videoOutput, acc, gyro, maxFps]);
 

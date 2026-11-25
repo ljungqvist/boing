@@ -44,10 +44,12 @@ namespace margelo::nitro::boingpose {
     double poseMs     SWIFT_PRIVATE;
     double totalMs     SWIFT_PRIVATE;
     double decoded     SWIFT_PRIVATE;
+    double helpers     SWIFT_PRIVATE;
+    double helperFrames     SWIFT_PRIVATE;
 
   public:
     AnalyzeTiming() = default;
-    explicit AnalyzeTiming(double openMs, double decodeMs, double poseMs, double totalMs, double decoded): openMs(openMs), decodeMs(decodeMs), poseMs(poseMs), totalMs(totalMs), decoded(decoded) {}
+    explicit AnalyzeTiming(double openMs, double decodeMs, double poseMs, double totalMs, double decoded, double helpers, double helperFrames): openMs(openMs), decodeMs(decodeMs), poseMs(poseMs), totalMs(totalMs), decoded(decoded), helpers(helpers), helperFrames(helperFrames) {}
 
   public:
     friend bool operator==(const AnalyzeTiming& lhs, const AnalyzeTiming& rhs) = default;
@@ -67,7 +69,9 @@ namespace margelo::nitro {
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "decodeMs"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "poseMs"))),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "totalMs"))),
-        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "decoded")))
+        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "decoded"))),
+        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "helpers"))),
+        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "helperFrames")))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::boingpose::AnalyzeTiming& arg) {
@@ -77,6 +81,8 @@ namespace margelo::nitro {
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "poseMs"), JSIConverter<double>::toJSI(runtime, arg.poseMs));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "totalMs"), JSIConverter<double>::toJSI(runtime, arg.totalMs));
       obj.setProperty(runtime, PropNameIDCache::get(runtime, "decoded"), JSIConverter<double>::toJSI(runtime, arg.decoded));
+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "helpers"), JSIConverter<double>::toJSI(runtime, arg.helpers));
+      obj.setProperty(runtime, PropNameIDCache::get(runtime, "helperFrames"), JSIConverter<double>::toJSI(runtime, arg.helperFrames));
       return obj;
     }
     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
@@ -92,6 +98,8 @@ namespace margelo::nitro {
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "poseMs")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "totalMs")))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "decoded")))) return false;
+      if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "helpers")))) return false;
+      if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, PropNameIDCache::get(runtime, "helperFrames")))) return false;
       return true;
     }
   };

@@ -38,6 +38,13 @@ export interface AnalyzeOptions {
    * frames the detector alone would miss (dim light, other people in the picture).
    */
   perFrame: boolean
+  /**
+   * With `perFrame`: up to this many more landmarkers on the CPU share the frames with the first one (default 0), each
+   * frame to whichever is free; loaded when the call starts, freed when it ends. Fewer on phones with little memory
+   * (Android: none on low-RAM devices, one below 3 GB); ignored in VIDEO mode (tracking needs the frames in order on
+   * one landmarker) and on iOS (not tried on a device yet).
+   */
+  cpuHelpers?: number
 }
 
 /** Where the time of one `analyzeVideo` call went, for the diagnostics (milliseconds). */
@@ -52,6 +59,9 @@ export interface AnalyzeTiming {
   totalMs: number
   /** Frames decoded, including those before `from` back to the key frame. */
   decoded: number
+  /** CPU landmarkers that shared the frames (see `AnalyzeOptions.cpuHelpers`), and the frames they measured. */
+  helpers: number
+  helperFrames: number
 }
 
 /** Pose of every analysed frame of a video. */

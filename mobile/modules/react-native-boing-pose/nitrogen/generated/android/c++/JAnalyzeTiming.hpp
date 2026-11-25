@@ -41,12 +41,18 @@ namespace margelo::nitro::boingpose {
       double totalMs = this->getFieldValue(fieldTotalMs);
       static const auto fieldDecoded = clazz->getField<double>("decoded");
       double decoded = this->getFieldValue(fieldDecoded);
+      static const auto fieldHelpers = clazz->getField<double>("helpers");
+      double helpers = this->getFieldValue(fieldHelpers);
+      static const auto fieldHelperFrames = clazz->getField<double>("helperFrames");
+      double helperFrames = this->getFieldValue(fieldHelperFrames);
       return AnalyzeTiming(
         openMs,
         decodeMs,
         poseMs,
         totalMs,
-        decoded
+        decoded,
+        helpers,
+        helperFrames
       );
     }
 
@@ -56,7 +62,7 @@ namespace margelo::nitro::boingpose {
      */
     [[maybe_unused]]
     static jni::local_ref<JAnalyzeTiming::javaobject> fromCpp(const AnalyzeTiming& value) {
-      using JSignature = JAnalyzeTiming(double, double, double, double, double);
+      using JSignature = JAnalyzeTiming(double, double, double, double, double, double, double);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -65,7 +71,9 @@ namespace margelo::nitro::boingpose {
         value.decodeMs,
         value.poseMs,
         value.totalMs,
-        value.decoded
+        value.decoded,
+        value.helpers,
+        value.helperFrames
       );
     }
   };

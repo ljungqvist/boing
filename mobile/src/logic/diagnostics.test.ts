@@ -33,6 +33,9 @@ describe("describeLog", () => {
       + " · took 6.8 s: wait 1.5, model 0.0, pose 4.1 (GPU), decode 1.8 alongside, 192 frames");
     // Without the native breakdown (e.g. analysing failed): only the wait.
     expect(describeLog({ ...e, timing: undefined })).toMatch(/· took 6.8 s: wait 1.5$/);
+    // CPU copies of the model shared the frames.
+    expect(describeLog({ ...e, timing: { ...e.timing, helpers: 1, helperFrames: 9 } }))
+      .toContain("pose 4.1 (GPU + 1 CPU, 9 frames on those), decode");
   });
 
   it("lists the movements found when none matched the live jump", () => {
