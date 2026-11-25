@@ -270,6 +270,12 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     onFrame,
   });
 
+  /** The flashlight failing (no flash unit, busy) must never stop the camera. */
+  const onCameraError = useCallback((e: Error) => {
+    if (/torch|flash/i.test(String(e?.message ?? e))) return;
+    onError(e);
+  }, [onError]);
+
   const onConfig = useCallback((c: CameraSessionConfig) => {
     info.current = { ...info.current, fps: c.selectedFPS ?? 0 };
     onInfo(info.current);
@@ -290,9 +296,11 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         constraints={constraints}
         onSessionConfigSelected={onConfig}
         // Declarative: applied as soon as the camera has started, and again whenever it changes
-        // (setting it through cameraRef.controller before the start was silently lost).
-        torchMode={lit ? "on" : "off"}
-        onError={onError}
+        // (setting it through cameraRef.controller before the start was silently lost). Left unset
+        // without a torch: Android throws IllegalStateException when a camera with no flash unit
+        // (the front one) is told to turn its torch off.
+        torchMode={hasTorch ? (lit ? "on" : "off") : undefined}
+        onError={onCameraError}
         resizeMode="cover"
         // The app is portrait only. With the default ("device") a phone lying on the floor reads as
         // landscape at random: the clips got a ±90° rotation tag and were re-measured sideways.
