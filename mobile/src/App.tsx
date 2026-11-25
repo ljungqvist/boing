@@ -26,6 +26,7 @@ import { announce, announceFailure, announceMeasuring } from "./native/feedback"
 import { blindColor, type BlindColor } from "./logic/blind";
 import { TORCH_LABEL, nextTorchMode, torchModeOf } from "./logic/torch";
 import { deleteQuietly, modelPath, toPath, type ModelKind } from "./native/models";
+import { CameraList } from "./ui/CameraList";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
 import { JumpDetails, Row, Sheet } from "./ui/Sheets";
@@ -553,6 +554,8 @@ function Main() {
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
           {facing === "back" && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
           {facing === "back" && live && torchReport !== "" && <Row label="Torch status" value={torchReport} />}
+          <Text style={s.cameras}>Cameras on this phone</Text>
+          <CameraList inUse={info?.deviceId} />
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
           {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
@@ -786,6 +789,7 @@ const s = StyleSheet.create({
     color: C.text, fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], overflow: "hidden",
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
   },
+  cameras: { color: C.muted, fontSize: 13, fontWeight: "600", marginTop: 10 },
   torch: {
     position: "absolute", right: 12, flexDirection: "row", alignItems: "center", gap: 6,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",

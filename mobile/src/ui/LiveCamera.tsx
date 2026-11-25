@@ -27,6 +27,8 @@ export interface CameraInfo {
   fps: number;
   /** "GPU" or "CPU". */
   delegate: string;
+  /** Id of the camera in use. */
+  deviceId?: string;
 }
 
 interface Props {
@@ -328,9 +330,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   }, [onError]);
 
   const onConfig = useCallback((c: CameraSessionConfig) => {
-    info.current = { ...info.current, fps: c.selectedFPS ?? 0 };
+    info.current = { ...info.current, fps: c.selectedFPS ?? 0, deviceId: device?.id };
     onInfo(info.current);
-  }, [onInfo]);
+  }, [onInfo, device]);
 
   const outputs = useMemo(() => [videoOutput, frameOutput], [videoOutput, frameOutput]);
   const constraints = useMemo(() => [{ fps }, { resolutionBias: videoOutput }], [fps, videoOutput]);
