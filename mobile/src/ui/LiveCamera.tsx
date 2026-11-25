@@ -17,6 +17,7 @@ import { bestFps } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
 import { SampleBuffer } from "../logic/motion";
 import { keepClip } from "../native/debug";
+import { DarkDetector, type TorchMode, meanBrightness } from "../logic/torch";
 import { fromDetect, toFrames } from "../logic/pose";
 import { deleteQuietly, modelPath, toPath } from "../native/models";
 import { PoseFeed, Skeleton } from "./Skeleton";
@@ -47,13 +48,17 @@ interface Props {
   shortWindow?: boolean;
   /** The screen turned to face below the horizon (`true`) or above it again (blind mode). */
   onScreenDown?: (down: boolean) => void;
+  /** The back camera's flashlight: off, automatic (when the picture is dark) or always on. */
+  torch?: TorchMode;
+  /** The flashlight is lit (or not): for the button. */
+  onTorchLit?: (lit: boolean) => void;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown, torch = "off", onTorchLit }: Props) {
   const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
@@ -71,6 +76,37 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
 
   const screenDownRef = useRef(onScreenDown);
   screenDownRef.current = onScreenDown;
+
+  // Flashlight (back camera only). Automatic mode watches the picture's brightness and, once it has
+  // been dark for a while, lights the torch for the rest of this run (see DarkDetector).
+  const [dark, setDark] = useState(false);
+  const darkDetector = useMemo(() => new DarkDetector(), []);
+  const hasTorch = facing === "back" && device?.hasTorch === true;
+  const lit = hasTorch && (torch === "on" || (torch === "auto" && dark));
+  const litRef = useRef(false);
+  litRef.current = lit;
+  const torchLitRef = useRef(onTorchLit);
+  torchLitRef.current = onTorchLit;
+  /** Send the flashlight state to the camera (it may not be running yet: onConfig repeats this). */
+  const applyTorch = useCallback(() => {
+    const c = cameraRef.current?.controller;
+    if (!c || !device?.hasTorch) return;
+    const mode = litRef.current ? "on" : "off";
+    if (c.torchMode !== mode) c.setTorchMode(mode).catch(() => {});
+  }, [device]);
+  useEffect(() => {
+    if (torch !== "auto") {
+      darkDetector.reset();
+      setDark(false);
+    }
+  }, [torch, darkDetector]);
+  useEffect(() => {
+    applyTorch();
+    torchLitRef.current?.(lit);
+    return () => torchLitRef.current?.(false);
+  }, [lit, applyTorch]);
+  /** Whether frames are checked for darkness: automatic mode, light not on yet. */
+  const sense = hasTorch && torch === "auto" && !dark;
 
   // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
   const acc = useMemo(() => new SampleBuffer(60), []);
@@ -210,13 +246,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   }, [controller, controllerRef]);
 
   const feed = useMemo(() => new PoseFeed(), []);
-  const onPose = useCallback((a: number[]) => {
+  const onPose = useCallback((a: number[], brightness: number) => {
+    if (Number.isFinite(brightness) && darkDetector.update(brightness, Date.now() / 1000)) setDark(true);
     const { frame, size } = fromDetect(a);
     if (!controller) return;
     controller.push(frame, size);
     // No skeleton while a jump is measured ("not ready").
     feed.emit({ lm: controller.measuring ? null : frame.lm, size, air: controller.airborne });
-  }, [controller, feed]);
+  }, [controller, feed, darkDetector]);
 
   const onFrame = useCallback((frame: Frame) => {
     "worklet";
@@ -224,12 +261,17 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       if (detector) {
         const a = detector.detect(frame);
         // Empty: skipped (live analysis paused while measuring).
-        if (a.length > 0) scheduleOnRN(onPose, a);
+        if (a.length > 0) {
+          const brightness = sense && frame.hasPixelBuffer
+            ? meanBrightness(new Uint8Array(frame.getPixelBuffer()), frame.width, frame.height, frame.bytesPerRow)
+            : NaN;
+          scheduleOnRN(onPose, a, brightness);
+        }
       }
     } finally {
       frame.dispose();
     }
-  }, [detector, onPose]);
+  }, [detector, onPose, sense]);
 
   const frameOutput = useFrameOutput({
     pixelFormat: "rgb",
@@ -241,7 +283,8 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const onConfig = useCallback((c: CameraSessionConfig) => {
     info.current = { ...info.current, fps: c.selectedFPS ?? 0 };
     onInfo(info.current);
-  }, [onInfo]);
+    applyTorch();
+  }, [onInfo, applyTorch]);
 
   const outputs = useMemo(() => [videoOutput, frameOutput], [videoOutput, frameOutput]);
   const constraints = useMemo(() => [{ fps }, { resolutionBias: videoOutput }], [fps, videoOutput]);

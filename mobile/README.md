@@ -36,6 +36,12 @@ most of the screen turns one colour — red: not ready, green: ready for a jump,
 measuring — at full brightness (also when automatic brightness would dim it, e.g. with the light
 sensor against a wall), and "Measuring" is also said out loud.
 
+**Flashlight** (back camera only): the pill under the top bar cycles Off (default) → Auto → On and is
+remembered. Auto lights the torch once the camera picture has stayed dark for 1.5 s (mean brightness
+below 12 %, read from a sparse grid of the live frames) and keeps it on until you press Stop, because
+the light itself would otherwise brighten the picture and switch it off again. The pill turns yellow
+while the torch is lit.
+
 ## Build and run (Android)
 
 Needs JDK 17 and the Android SDK (`brew install openjdk@17 && brew install --cask android-commandlinetools`;

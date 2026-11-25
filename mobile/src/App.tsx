@@ -23,6 +23,7 @@ import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, r
 import { maxBrightness } from "./native/brightness";
 import { announce, announceFailure, announceMeasuring } from "./native/feedback";
 import { blindColor, type BlindColor } from "./logic/blind";
+import { TORCH_LABEL, nextTorchMode, torchModeOf } from "./logic/torch";
 import { deleteQuietly, modelPath, toPath } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
@@ -97,6 +98,9 @@ function Main() {
     return next;
   });
   const phoneId = settings.phoneId as string;
+  /** The back camera's flashlight: off, automatic or on (saved). */
+  const torch = torchModeOf(settings.torch);
+  const [torchLit, setTorchLit] = useState(false);
   const keep = keepActive(settings);
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
@@ -367,6 +371,8 @@ function Main() {
             onError={fail}
             onInfo={setInfo}
             keep={keepNow && keep}
+            torch={torch}
+            onTorchLit={setTorchLit}
             measureOnCpu={settings.measureOnCpu === true}
             shortWindow={settings.shortWindow === true}
             onScreenDown={setScreenDown}
@@ -413,6 +419,18 @@ function Main() {
             </Pressable>
           </View>
         </View>
+
+        {facing === "back" && (
+          <Pressable
+            style={[s.torch, { top: insets.top + 92 }, torchLit && s.torchLit]}
+            onPress={() => updateSettings({ torch: nextTorchMode(torch) })}
+            hitSlop={8}
+            accessibilityLabel={`${TORCH_LABEL[torch]}. Tap to change`}
+          >
+            <Icon name={torch === "off" ? "torchOff" : torch === "auto" ? "torchAuto" : "torchOn"} size={20} color={torchLit ? "#1d1500" : C.text} />
+            <Text style={[s.torchText, torchLit && s.torchTextLit]}>{torch === "off" ? "Off" : torch === "auto" ? "Auto" : "On"}</Text>
+          </Pressable>
+        )}
 
         {fpsBadge && (
           <View style={[s.fpsWrap, { top: insets.top + 56 }]} pointerEvents="none">
@@ -512,6 +530,7 @@ function Main() {
         <Sheet title="Settings" onClose={() => setMenu(false)}>
           <Row label="Version" value={VERSION} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
+          {facing === "back" && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
           {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
@@ -702,6 +721,13 @@ const s = StyleSheet.create({
     color: C.text, fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], overflow: "hidden",
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
   },
+  torch: {
+    position: "absolute", right: 12, flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  torchLit: { backgroundColor: C.warn },
+  torchText: { color: C.text, fontSize: 13, fontWeight: "600" },
+  torchTextLit: { color: "#1d1500" },
   fpsLow: { color: "#1d1500", backgroundColor: C.warn },
   flashWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
   flashBox: { backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 16, paddingHorizontal: 20, paddingVertical: 6 },
