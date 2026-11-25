@@ -69,7 +69,12 @@ const CPU_HELPERS = 2;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
 export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, clockShift, onClockShift, onScreenDown, torch = "off", onTorchLit, onTorchReport }: Props) {
-  const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
+  const wide = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
+  // On phones with several back cameras the single wide-angle lens reports no flash unit (the flash
+  // belongs to the combined back camera). With the flashlight on or auto, use the default back camera
+  // then, which has it; with it off, nothing changes.
+  const combined = useCameraDevice(facing);
+  const device = torch !== "off" && facing === "back" && wide?.hasTorch !== true && combined?.hasTorch === true ? combined : wide;
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
@@ -118,14 +123,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     const report = (t: string) => reportRef.current?.(t);
     if (facing !== "back") return report("");
     if (!device) return;
-    if (!device.hasTorch) return report("this camera reports no flash unit");
+    if (!device.hasTorch) return report(`no flash unit on camera ${device.id}`);
     const tick = () => {
       const c = cameraRef.current?.controller;
       const want = litRef.current ? "on" : "off";
       if (!c) return report("camera not ready yet");
       let have: string;
       try { have = c.torchMode; } catch (e) { return report(`can't read: ${String((e as Error)?.message ?? e)}`); }
-      if (have === want) return report(`${have} (as wanted)`);
+      if (have === want) return report(`${have} (as wanted), camera ${device.id}`);
       c.setTorchMode(want).then(
         () => report(`set ${want} (was ${have})`),
         (e) => report(`setting ${want} failed: ${String((e as Error)?.message ?? e)}`),
@@ -334,6 +339,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   return (
     <>
       <Camera
+        key={device.id}
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         isActive

@@ -552,7 +552,7 @@ function Main() {
           <Row label="Version" value={VERSION} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
           {facing === "back" && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
-          {facing === "back" && live && torchReport !== "" && <Row label="Flashlight, camera says" value={torchReport} />}
+          {facing === "back" && live && torchReport !== "" && <Row label="Torch status" value={torchReport} />}
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
           {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
           {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
