@@ -2,7 +2,7 @@
   "expo": {
     "name": "Boing",
     "slug": "boing",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "scheme": "boing",
     "icon": "./assets/icon.png",
@@ -44,7 +44,10 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 28
+            "minSdkVersion": 28,
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "# Nitro / JNI look these up by name from C++ (fbjni) and by reflection.\n-keep class com.margelo.nitro.** { *; }\n-keep class com.mrousavy.camera.** { *; }\n-keep class expo.modules.boingupload.** { *; }\n-keep class com.google.mediapipe.** { *; }\n-keep class com.google.protobuf.** { *; }\n-dontwarn com.google.mediapipe.proto.**\n# MediaPipe image embedder (unused) refers to LiteRT-LM, which is not bundled.\n-dontwarn com.google.ai.edge.litertlm.**\n"
           }
         }
       ],
