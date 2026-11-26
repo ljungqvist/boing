@@ -42,13 +42,20 @@ height" (also when re-measuring timed out or the recording couldn't be read).
 **Blind mode**: with the back camera on and the screen facing below the horizon (nobody can read it),
 most of the screen turns one colour — red: not ready, green: ready for a jump, orange: in the air or
 measuring — at full brightness (also when automatic brightness would dim it, e.g. with the light
-sensor against a wall), and "Measuring" is also said out loud.
+sensor against a wall). "Measuring" is spoken in every mode (when the sound is on), like the height.
 
-**Flashlight** (back camera only): the pill under the top bar cycles Off (default) → Auto → On and is
-remembered. Auto lights the torch once the camera picture has stayed dark for 1.5 s (mean brightness
+**Flashlight**: the pill under the top bar (shown when some camera on the chosen side has a flash,
+normally the back) cycles Off (default) → Auto → On and is remembered. Auto lights the torch once the camera picture has stayed dark for 1.5 s (mean brightness
 below 12 %, read from a sparse grid of the live frames) and keeps it on until you press Stop, because
 the light itself would otherwise brighten the picture and switch it off again. The pill turns yellow
 while the torch is lit.
+
+**Which camera**: the same rule for front and back (`pickCamera` in `src/logic/camera.ts`). Among the
+cameras on the chosen side: with the torch wanted (On, or Auto once it is dark) only those with a flash;
+then drop the ones whose top frame rate is more than 10 % below the best; then the system's default camera
+if it is left, otherwise the lowest id. No lens names are used. Auto starts without the torch and asks
+again once it is dark; the camera only restarts if that picks a different one. Settings lists all cameras
+of the phone with their frame rates.
 
 ## Build and run (Android)
 

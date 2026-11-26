@@ -7,13 +7,14 @@ import {
   type CameraSessionConfig,
   type Frame,
   useCameraDevice,
+  useCameraDevices,
   useFrameOutput,
   useVideoOutput,
 } from "react-native-vision-camera";
 import { Accelerometer, Gyroscope } from "expo-sensors";
 import { scheduleOnRN } from "react-native-worklets";
 import { screenFacesDown } from "../logic/blind";
-import { bestFps } from "../logic/camera";
+import { bestFps, pickCamera } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
 import { SampleBuffer } from "../logic/motion";
 import { keepClip } from "../native/debug";
@@ -72,12 +73,14 @@ const CPU_HELPERS = 2;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
 export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, clockShift, onClockShift, onScreenDown, torch = "off", onTorchLit, onTorchReport }: Props) {
-  const wide = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
-  // On phones with several back cameras the single wide-angle lens reports no flash unit (the flash
-  // belongs to the combined back camera). With the flashlight on or auto, use the default back camera
-  // then, which has it; with it off, nothing changes.
-  const combined = useCameraDevice(facing);
-  const device = torch !== "off" && facing === "back" && wide?.hasTorch !== true && combined?.hasTorch === true ? combined : wide;
+  // Which camera: see pickCamera (the torch wanted narrows it to cameras with a flash). Automatic
+  // mode starts without the torch and asks again once it has turned dark (state below).
+  const [dark, setDark] = useState(false);
+  const wantTorch = torch === "on" || (torch === "auto" && dark);
+  const all = useCameraDevices();
+  const sideCameras = useMemo(() => all.filter((d) => d.position === facing), [all, facing]);
+  const defaultCamera = useCameraDevice(facing);
+  const device = useMemo(() => pickCamera(sideCameras, defaultCamera?.id, wantTorch), [sideCameras, defaultCamera?.id, wantTorch]);
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
@@ -97,12 +100,11 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   const screenDownRef = useRef(onScreenDown);
   screenDownRef.current = onScreenDown;
 
-  // Flashlight (back camera only). Automatic mode watches the picture's brightness and, once it has
-  // been dark for a while, lights the torch for the rest of this run (see DarkDetector).
-  const [dark, setDark] = useState(false);
+  // Flashlight. Automatic mode watches the picture's brightness and, once it has been dark for a
+  // while, lights the torch for the rest of this run (see DarkDetector).
   const darkDetector = useMemo(() => new DarkDetector(), []);
-  const hasTorch = facing === "back" && device?.hasTorch === true;
-  const lit = hasTorch && (torch === "on" || (torch === "auto" && dark));
+  const hasTorch = device?.hasTorch === true;
+  const lit = hasTorch && wantTorch;
   const torchLitRef = useRef(onTorchLit);
   torchLitRef.current = onTorchLit;
   useEffect(() => {
@@ -124,7 +126,6 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   // The outcome also goes to the Settings sheet, to see why a light stays off.
   useEffect(() => {
     const report = (t: string) => reportRef.current?.(t);
-    if (facing !== "back") return report("");
     if (!device) return;
     if (!device.hasTorch) return report(`no flash unit on camera ${device.id}`);
     const tick = () => {
@@ -142,9 +143,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     tick();
     const id = setInterval(tick, 1500);
     return () => clearInterval(id);
-  }, [facing, device]);
-  /** Whether frames are checked for darkness: automatic mode, light not on yet. */
-  const sense = hasTorch && torch === "auto" && !dark;
+  }, [device]);
+  /** Whether frames are checked for darkness: automatic mode, light not on yet, some camera with a flash. */
+  const sense = torch === "auto" && !dark && sideCameras.some((d) => d.hasTorch);
 
   // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
   const acc = useMemo(() => new SampleBuffer(60), []);

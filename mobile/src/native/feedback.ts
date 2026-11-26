@@ -16,7 +16,7 @@ export function announceFailure(sound: boolean): Promise<void> {
   return say("Couldn't determine the height", sound);
 }
 
-/** Spoken "Measuring" (blind mode: the screen can't be read). */
+/** Spoken "Measuring" (always, when the sound is on: the screen may not be in view). */
 export function announceMeasuring(sound: boolean): Promise<void> {
   return say("Measuring", sound);
 }

@@ -3,7 +3,7 @@ import type { Tone } from "./status";
 /**
  * Blind mode: the back camera faces the jumper, so the screen faces away and nobody can read it.
  * Most of the screen then shows one colour, bright enough to see from the side or as a glow on the
- * floor or a wall, and "Measuring" is also said out loud.
+ * floor or a wall. ("Measuring" is spoken in every mode, not only here.)
  */
 
 /**

@@ -7,7 +7,7 @@ import { Linking, PermissionsAndroid, Platform, Pressable, ScrollView, Settings,
 import { stopUploads } from "boing-upload";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCameraPermission } from "react-native-vision-camera";
+import { useCameraDevices, useCameraPermission } from "react-native-vision-camera";
 import appJson from "../app.json";
 import { discardFeedback } from "../../src/analysis/discard";
 import { entriesForClip, type Entry } from "./logic/jumps";
@@ -81,7 +81,6 @@ function Main() {
   const [session, setSession] = useState(0); // remounts the camera on Start/flip
   const controller = useRef<LiveController | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const blindRef = useRef(false);
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const run = useRef(0); // cancels a file analysis when something else starts
@@ -103,6 +102,8 @@ function Main() {
   /** The back camera's flashlight: off, automatic or on (saved). */
   const torch = torchModeOf(settings.torch);
   const [torchLit, setTorchLit] = useState(false);
+  /** The flashlight pill shows when some camera on the chosen side has a flash. */
+  const hasFlash = useCameraDevices().some((d) => d.position === facing && d.hasTorch);
   const [torchReport, setTorchReport] = useState("");
   const keep = keepActive(settings);
   const updateSettings = (patch: Record<string, unknown>) =>
@@ -230,8 +231,7 @@ function Main() {
     status: (s) => setStatus((old) => (old.text === s.text && old.tone === s.tone ? old : s)),
     measuring: () => {
       showFlash({ text: "Measuring…", measuring: true });
-      // In blind mode nobody sees the screen: say it.
-      if (blindRef.current) void announceMeasuring(soundRef.current);
+      void announceMeasuring(soundRef.current);
     },
     result: (m, measuring) => {
       console.log(`BOING_LIVE ${JSON.stringify({ h: m.jump.hPrimary, hFlight: m.jump.hFlight, fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags })}`);
@@ -369,7 +369,6 @@ function Main() {
   const fpsBadge = fpsLabel(live ? info?.fps : mode === "idle" ? fileFps : 0);
   // Blind mode: the back camera faces the jumper and the screen faces down, away from everyone.
   const blind = live && facing === "back" && screenDown;
-  blindRef.current = blind;
   // Full brightness while blind (also against automatic brightness, the light sensor may be covered).
   useEffect(() => {
     if (!blind) return;
@@ -442,7 +441,7 @@ function Main() {
           </View>
         </View>
 
-        {facing === "back" && (
+        {hasFlash && (
           <Pressable
             style={[s.torch, { top: insets.top + 92 }, torchLit && s.torchLit]}
             onPress={() => updateSettings({ torch: nextTorchMode(torch) })}
@@ -552,8 +551,8 @@ function Main() {
         <Sheet title="Settings" onClose={() => setMenu(false)}>
           <Row label="Version" value={VERSION} />
           <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
-          {facing === "back" && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
-          {facing === "back" && live && torchReport !== "" && <Row label="Torch status" value={torchReport} />}
+          {hasFlash && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
+          {hasFlash && live && torchReport !== "" && <Row label="Torch status" value={torchReport} />}
           <Text style={s.cameras}>Cameras on this phone</Text>
           <CameraList inUse={info?.deviceId} />
           {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
