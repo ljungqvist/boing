@@ -73,6 +73,13 @@ jobs:
         id: artifact
         run: echo "name=boing-${GITHUB_REF_NAME//\//-}-apk" >> "$GITHUB_OUTPUT"
 
+      # R8 output: what was renamed/stripped (to check keep rules without a phone).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping
+          path: mobile/android/app/build/outputs/mapping/release/
+          if-no-files-found: warn
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifact.outputs.name }}
