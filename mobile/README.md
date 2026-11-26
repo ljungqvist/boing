@@ -54,8 +54,7 @@ while the torch is lit.
 cameras on the chosen side: with the torch wanted (On, or Auto once it is dark) only those with a flash;
 then drop the ones whose top frame rate is more than 10 % below the best; then the system's default camera
 if it is left, otherwise the lowest id. No lens names are used. Auto starts without the torch and asks
-again once it is dark; the camera only restarts if that picks a different one. Settings lists all cameras
-of the phone with their frame rates.
+again once it is dark; the camera only restarts if that picks a different one.
 
 ## Build and run (Android)
 

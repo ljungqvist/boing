@@ -26,7 +26,6 @@ import { announce, announceFailure, announceMeasuring } from "./native/feedback"
 import { blindColor, type BlindColor } from "./logic/blind";
 import { TORCH_LABEL, nextTorchMode, torchModeOf } from "./logic/torch";
 import { deleteQuietly, modelPath, toPath, type ModelKind } from "./native/models";
-import { CameraList } from "./ui/CameraList";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
 import { JumpDetails, Row, Sheet } from "./ui/Sheets";
@@ -104,7 +103,6 @@ function Main() {
   const [torchLit, setTorchLit] = useState(false);
   /** The flashlight pill shows when some camera on the chosen side has a flash. */
   const hasFlash = useCameraDevices().some((d) => d.position === facing && d.hasTorch);
-  const [torchReport, setTorchReport] = useState("");
   const keep = keepActive(settings);
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
@@ -392,7 +390,6 @@ function Main() {
             keep={keepNow && keep}
             torch={torch}
             onTorchLit={setTorchLit}
-            onTorchReport={setTorchReport}
             measureOnCpu={settings.measureOnCpu === true}
             clockShift={(settings.clockShift as Record<string, number> | undefined)?.[facing]}
             onClockShift={(x) => updateClockShift(facing, x)}
@@ -550,35 +547,7 @@ function Main() {
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
           <Row label="Version" value={VERSION} />
-          <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
-          {hasFlash && <Row label="Flashlight" value={torch === "off" ? "Off" : torch === "auto" ? (torchLit ? "Auto (lit)" : "Auto") : "On"} />}
-          {hasFlash && live && torchReport !== "" && <Row label="Torch status" value={torchReport} />}
-          <Text style={s.cameras}>Cameras on this phone</Text>
-          <CameraList inUse={info?.deviceId} />
-          {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
-          {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
-          {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
-          <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
-            <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
-          </Pressable>
-          <Text style={s.hint}>For comparing the speed; applies from the next Start.</Text>
-          {logs.length > 0 && (
-            <>
-              <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
-              <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
-                <Text style={s.wideText}>Share diagnostics</Text>
-              </Pressable>
-              {logs.some((e) => e.pose) && (
-                <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs, true)}>
-                  <Text style={s.wideText}>Share pose data (latest 8 jumps)</Text>
-                </Pressable>
-              )}
-              {logs.map((e, i) => (
-                <Text key={i} style={s.diag}>{describeLog(e)}</Text>
-              ))}
-            </>
-          )}
-          <Text style={s.sectionTitle}>Debug recordings</Text>
+          <Text style={s.sectionTitle}>Recordings</Text>
           {ask === "consent" ? (
             <>
               <Text style={s.consentTitle}>{CONSENT_TITLE}</Text>
@@ -654,14 +623,6 @@ function Main() {
               <Text style={[s.hint, { color: C.accent }]}>Withdraw consent · recording ID {phoneId}</Text>
             </Pressable>
           )}
-          {ignored.length > 0 && (
-            <>
-              <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
-              {ignored.map((x, i) => (
-                <Text key={i} style={s.hint}>{x}</Text>
-              ))}
-            </>
-          )}
           <Text style={s.hint}>
             Boing measures the height of a countermovement jump from the camera. Every recorded frame around
             a jump is analysed again, at the camera's full frame rate.
@@ -672,6 +633,41 @@ function Main() {
           <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)} accessibilityRole="link">
             <Text style={[s.hint, { color: C.accent }]}>Privacy policy</Text>
           </Pressable>
+          <View style={s.debugLine}>
+            <Text style={s.debugTitle}>Debug</Text>
+            <Text style={s.hint}>For developers and testers.</Text>
+          </View>
+          {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
+          {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
+          {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
+          <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
+            <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
+          </Pressable>
+          <Text style={s.hint}>For comparing the speed; applies from the next Start.</Text>
+          {logs.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
+              <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
+                <Text style={s.wideText}>Share diagnostics</Text>
+              </Pressable>
+              {logs.some((e) => e.pose) && (
+                <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs, true)}>
+                  <Text style={s.wideText}>Share pose data (latest 8 jumps)</Text>
+                </Pressable>
+              )}
+              {logs.map((e, i) => (
+                <Text key={i} style={s.diag}>{describeLog(e)}</Text>
+              ))}
+            </>
+          )}
+          {ignored.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
+              {ignored.map((x, i) => (
+                <Text key={i} style={s.hint}>{x}</Text>
+              ))}
+            </>
+          )}
         </Sheet>
       )}
     </View>
@@ -788,7 +784,8 @@ const s = StyleSheet.create({
     color: C.text, fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], overflow: "hidden",
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
   },
-  cameras: { color: C.muted, fontSize: 13, fontWeight: "600", marginTop: 10 },
+  debugLine: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 20, paddingTop: 12 },
+  debugTitle: { color: C.text, fontSize: 18, fontWeight: "700" },
   torch: {
     position: "absolute", right: 12, flexDirection: "row", alignItems: "center", gap: 6,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",

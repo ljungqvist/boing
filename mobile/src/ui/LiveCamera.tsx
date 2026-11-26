@@ -28,8 +28,6 @@ export interface CameraInfo {
   fps: number;
   /** "GPU" or "CPU". */
   delegate: string;
-  /** Id of the camera in use. */
-  deviceId?: string;
 }
 
 interface Props {
@@ -57,8 +55,6 @@ interface Props {
   torch?: TorchMode;
   /** The flashlight is lit (or not): for the button. */
   onTorchLit?: (lit: boolean) => void;
-  /** What the camera says about the flashlight, for the Settings sheet (diagnostics). */
-  onTorchReport?: (text: string) => void;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
@@ -72,7 +68,7 @@ const SENSOR_MS = 10;
 const CPU_HELPERS = 2;
 
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, clockShift, onClockShift, onScreenDown, torch = "off", onTorchLit, onTorchReport }: Props) {
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, clockShift, onClockShift, onScreenDown, torch = "off", onTorchLit }: Props) {
   // Which camera: see pickCamera (the torch wanted narrows it to cameras with a flash). Automatic
   // mode starts without the torch and asks again once it has turned dark (state below).
   const [dark, setDark] = useState(false);
@@ -119,26 +115,20 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   }, [lit]);
   const litRef = useRef(lit);
   litRef.current = lit;
-  const reportRef = useRef(onTorchReport);
-  reportRef.current = onTorchReport;
-  // Watchdog: the camera may drop the torch when it reconfigures (rebinding), and the prop only
-  // acts on changes. Every 1.5 s compare with what the camera reports and set it again if needed.
-  // The outcome also goes to the Settings sheet, to see why a light stays off.
+  // Watchdog: the camera may drop the torch when it reconfigures (rebinding). Every 1.5 s compare
+  // with what the camera reports and set it again if needed. Errors (camera still opening) are
+  // ignored: the next round tries again.
   useEffect(() => {
-    const report = (t: string) => reportRef.current?.(t);
-    if (!device) return;
-    if (!device.hasTorch) return report(`no flash unit on camera ${device.id}`);
+    if (!device?.hasTorch) return;
     const tick = () => {
       const c = cameraRef.current?.controller;
+      if (!c) return;
       const want = litRef.current ? "on" : "off";
-      if (!c) return report("camera not ready yet");
-      let have: string;
-      try { have = c.torchMode; } catch (e) { return report(`can't read: ${String((e as Error)?.message ?? e)}`); }
-      if (have === want) return report(`${have} (as wanted), camera ${device.id}`);
-      c.setTorchMode(want).then(
-        () => report(`set ${want} (was ${have})`),
-        (e) => report(`setting ${want} failed: ${String((e as Error)?.message ?? e)}`),
-      );
+      try {
+        if (c.torchMode !== want) c.setTorchMode(want).catch(() => {});
+      } catch {
+        // Not readable yet.
+      }
     };
     tick();
     const id = setInterval(tick, 1500);
@@ -324,17 +314,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
 
   /** The flashlight failing (no flash unit, busy) must never stop the camera. */
   const onCameraError = useCallback((e: Error) => {
-    if (/torch|flash/i.test(String(e?.message ?? e))) {
-      reportRef.current?.(`camera error: ${String(e?.message ?? e)}`);
-      return;
-    }
+    if (/torch|flash/i.test(String(e?.message ?? e))) return;
     onError(e);
   }, [onError]);
 
   const onConfig = useCallback((c: CameraSessionConfig) => {
-    info.current = { ...info.current, fps: c.selectedFPS ?? 0, deviceId: device?.id };
+    info.current = { ...info.current, fps: c.selectedFPS ?? 0 };
     onInfo(info.current);
-  }, [onInfo, device]);
+  }, [onInfo]);
 
   const outputs = useMemo(() => [videoOutput, frameOutput], [videoOutput, frameOutput]);
   const constraints = useMemo(() => [{ fps }, { resolutionBias: videoOutput }], [fps, videoOutput]);
