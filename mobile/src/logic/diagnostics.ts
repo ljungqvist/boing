@@ -46,7 +46,8 @@ function describeTiming(e: Entry): string | null {
   const parts = [`wait ${s("waitMs")}`];
   if (e.timing && typeof e.timing === "object") {
     const t = e.timing as Entry;
-    parts.push(`model ${s("openMs", t)}`, `pose ${s("poseMs", t)}${t.delegate ? ` (${String(t.delegate)})` : ""}`,
+    const helpers = typeof t.helpers === "number" && t.helpers > 0 ? ` + ${t.helpers} CPU, ${num(t, "helperFrames", 0)} frames on those` : "";
+    parts.push(`model ${s("openMs", t)}`, `pose ${s("poseMs", t)}${t.delegate ? ` (${String(t.delegate)}${helpers})` : ""}`,
       `decode ${s("decodeMs", t)} alongside, ${num(t, "decoded", 0)} frames`);
   }
   return `took ${s("totalMs")} s: ${parts.join(", ")}`;

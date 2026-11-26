@@ -16,8 +16,8 @@ class HybridBoingPose: HybridBoingPoseSpec {
     return try HybridPoseDetector(modelPath: modelPath, preferGpu: preferGpu)
   }
 
-  func prepare(modelPath: String, preferGpu: Bool) throws {
-    Prepared.shared.prepare(modelPath: modelPath, preferGpu: preferGpu)
+  func prepare(modelPath: String, preferGpu: Bool, perFrame: Bool) throws {
+    Prepared.shared.prepare(modelPath: modelPath, preferGpu: preferGpu, perFrame: perFrame)
   }
 
   func releasePrepared() throws {
@@ -33,11 +33,11 @@ class HybridBoingPose: HybridBoingPoseSpec {
       let start = CFAbsoluteTimeGetCurrent()
       let (asset, track) = try openVideo(path)
       let open0 = CFAbsoluteTimeGetCurrent()
-      let prepared = Prepared.shared.take(modelPath: options.modelPath, preferGpu: options.preferGpu)
-      let landmarker = try prepared ?? VideoLandmarker.create(modelPath: options.modelPath, preferGpu: options.preferGpu)
+      let prepared = Prepared.shared.take(modelPath: options.modelPath, preferGpu: options.preferGpu, perFrame: options.perFrame)
+      let landmarker = try prepared ?? VideoLandmarker.create(modelPath: options.modelPath, preferGpu: options.preferGpu, perFrame: options.perFrame)
       let openS = CFAbsoluteTimeGetCurrent() - open0
       // The next video gets a fresh one (no tracking state carried over).
-      defer { if prepared != nil { Prepared.shared.refill(modelPath: options.modelPath, preferGpu: options.preferGpu) } }
+      defer { if prepared != nil { Prepared.shared.refill(modelPath: options.modelPath, preferGpu: options.preferGpu, perFrame: options.perFrame) } }
       let rotation = Int(rotationDegrees(track.preferredTransform))
       let reader = try AVAssetReader(asset: asset)
       // MediaPipe's GPU path wraps the frames in Metal textures: they must be IOSurface-backed and
@@ -101,7 +101,9 @@ class HybridBoingPose: HybridBoingPoseSpec {
       reader.cancelReading()
       let timing = AnalyzeTiming(
         openMs: openS * 1000, decodeMs: decodeS * 1000, poseMs: poseS * 1000,
-        totalMs: (CFAbsoluteTimeGetCurrent() - start) * 1000, decoded: Double(decoded))
+        totalMs: (CFAbsoluteTimeGetCurrent() - start) * 1000, decoded: Double(decoded),
+        // CPU helpers (options.cpuHelpers) aren't used on iOS yet: not tried on a device.
+        helpers: 0, helperFrames: 0)
       return AnalyzeResult(
         width: width, height: height, times: times, found: found, landmarks: landmarks,
         delegate: landmarker.delegate, timing: timing)
@@ -125,19 +127,19 @@ private final class Prepared {
     var landmarker: VideoLandmarker?
   }
 
-  private static func keyOf(_ modelPath: String, _ preferGpu: Bool) -> String { "\(preferGpu) \(modelPath)" }
+  private static func keyOf(_ modelPath: String, _ preferGpu: Bool, _ perFrame: Bool) -> String { "\(preferGpu) \(perFrame) \(modelPath)" }
 
-  func prepare(modelPath: String, preferGpu: Bool) {
-    let k = Prepared.keyOf(modelPath, preferGpu)
+  func prepare(modelPath: String, preferGpu: Bool, perFrame: Bool) {
+    let k = Prepared.keyOf(modelPath, preferGpu, perFrame)
     lock.lock()
     defer { lock.unlock() }
     if key == k {
-      if slot == nil { slot = load(modelPath, preferGpu) }
+      if slot == nil { slot = load(modelPath, preferGpu, perFrame) }
       return
     }
     dropLocked()
     key = k
-    slot = load(modelPath, preferGpu)
+    slot = load(modelPath, preferGpu, perFrame)
   }
 
   func release() {
@@ -147,10 +149,10 @@ private final class Prepared {
     dropLocked()
   }
 
-  /// The prepared landmarker for this model (waits while it loads), or nil when there's none or it failed to load.
-  func take(modelPath: String, preferGpu: Bool) -> VideoLandmarker? {
+  /// The prepared landmarker for this model and mode (waits while it loads), or nil when there's none or it failed to load.
+  func take(modelPath: String, preferGpu: Bool, perFrame: Bool) -> VideoLandmarker? {
     lock.lock()
-    guard key == Prepared.keyOf(modelPath, preferGpu), let s = slot else {
+    guard key == Prepared.keyOf(modelPath, preferGpu, perFrame), let s = slot else {
       lock.unlock()
       return nil
     }
@@ -161,16 +163,16 @@ private final class Prepared {
   }
 
   /// Loads the next one, if this model is still the prepared one.
-  func refill(modelPath: String, preferGpu: Bool) {
+  func refill(modelPath: String, preferGpu: Bool, perFrame: Bool) {
     lock.lock()
     defer { lock.unlock() }
-    if key == Prepared.keyOf(modelPath, preferGpu) && slot == nil { slot = load(modelPath, preferGpu) }
+    if key == Prepared.keyOf(modelPath, preferGpu, perFrame) && slot == nil { slot = load(modelPath, preferGpu, perFrame) }
   }
 
-  private func load(_ modelPath: String, _ preferGpu: Bool) -> Slot {
+  private func load(_ modelPath: String, _ preferGpu: Bool, _ perFrame: Bool) -> Slot {
     let s = Slot()
     loader.async {
-      s.landmarker = try? VideoLandmarker.create(modelPath: modelPath, preferGpu: preferGpu)
+      s.landmarker = try? VideoLandmarker.create(modelPath: modelPath, preferGpu: preferGpu, perFrame: perFrame)
       s.ready.signal()
     }
     return s

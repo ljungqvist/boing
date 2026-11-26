@@ -33,6 +33,7 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include "JAnalyzeTiming.hpp"
 #include "AnalyzeOptions.hpp"
 #include "JAnalyzeOptions.hpp"
+#include <optional>
 #include <functional>
 #include "JFunc_void_double.hpp"
 #include <NitroModules/JNICallable.hpp>
@@ -75,9 +76,9 @@ namespace margelo::nitro::boingpose {
     auto __result = method(_javaPart, jni::make_jstring(modelPath), preferGpu);
     return __result->getJHybridPoseDetectorSpec();
   }
-  void JHybridBoingPoseSpec::prepare(const std::string& modelPath, bool preferGpu) {
-    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* modelPath */, jboolean /* preferGpu */)>("prepare");
-    method(_javaPart, jni::make_jstring(modelPath), preferGpu);
+  void JHybridBoingPoseSpec::prepare(const std::string& modelPath, bool preferGpu, bool perFrame) {
+    static const auto method = _javaPart->javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* modelPath */, jboolean /* preferGpu */, jboolean /* perFrame */)>("prepare");
+    method(_javaPart, jni::make_jstring(modelPath), preferGpu, perFrame);
   }
   void JHybridBoingPoseSpec::releasePrepared() {
     static const auto method = _javaPart->javaClassStatic()->getMethod<void()>("releasePrepared");

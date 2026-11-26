@@ -32,7 +32,13 @@ data class AnalyzeTiming(
   val totalMs: Double,
   @DoNotStrip
   @Keep
-  val decoded: Double
+  val decoded: Double,
+  @DoNotStrip
+  @Keep
+  val helpers: Double,
+  @DoNotStrip
+  @Keep
+  val helperFrames: Double
 ) {
   /* primary constructor */
 
@@ -44,6 +50,8 @@ data class AnalyzeTiming(
       && Objects.deepEquals(this.poseMs, other.poseMs)
       && Objects.deepEquals(this.totalMs, other.totalMs)
       && Objects.deepEquals(this.decoded, other.decoded)
+      && Objects.deepEquals(this.helpers, other.helpers)
+      && Objects.deepEquals(this.helperFrames, other.helperFrames)
   }
 
   override fun hashCode(): Int {
@@ -52,7 +60,9 @@ data class AnalyzeTiming(
       decodeMs,
       poseMs,
       totalMs,
-      decoded
+      decoded,
+      helpers,
+      helperFrames
     ).contentDeepHashCode()
   }
 
@@ -64,8 +74,8 @@ data class AnalyzeTiming(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(openMs: Double, decodeMs: Double, poseMs: Double, totalMs: Double, decoded: Double): AnalyzeTiming {
-      return AnalyzeTiming(openMs, decodeMs, poseMs, totalMs, decoded)
+    private fun fromCpp(openMs: Double, decodeMs: Double, poseMs: Double, totalMs: Double, decoded: Double, helpers: Double, helperFrames: Double): AnalyzeTiming {
+      return AnalyzeTiming(openMs, decodeMs, poseMs, totalMs, decoded, helpers, helperFrames)
     }
   }
 }

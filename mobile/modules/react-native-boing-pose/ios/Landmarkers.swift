@@ -10,42 +10,45 @@ func boingError(_ message: String) -> NSError {
   return NSError(domain: "BoingPose", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
 }
 
-/// A MediaPipe pose landmarker in VIDEO mode, with strictly increasing timestamps.
+/// A MediaPipe pose landmarker: in VIDEO mode (tracking the person from frame to frame, strictly increasing
+/// timestamps), or with `perFrame` in IMAGE mode (every frame on its own: no tracking lag, no state).
 /// The GPU can fail at creation or only at the first inference: either way it falls back to the
 /// CPU and keeps going.
 final class VideoLandmarker {
   private let path: String
+  let perFrame: Bool
   private var landmarker: PoseLandmarker
   private(set) var delegate: String
   private var lastMs = -1
   private var proven = false
 
-  private init(path: String, preferGpu: Bool) throws {
+  private init(path: String, preferGpu: Bool, perFrame: Bool) throws {
     self.path = path
+    self.perFrame = perFrame
     if preferGpu {
       do {
-        landmarker = try VideoLandmarker.build(path, .GPU)
+        landmarker = try VideoLandmarker.build(path, .GPU, perFrame)
         delegate = "GPU"
         return
       } catch {
         NSLog("BoingPose: pose landmarker on the GPU failed, using the CPU: \(error)")
       }
     }
-    landmarker = try VideoLandmarker.build(path, .CPU)
+    landmarker = try VideoLandmarker.build(path, .CPU, perFrame)
     delegate = "CPU"
   }
 
-  private static func build(_ path: String, _ d: Delegate) throws -> PoseLandmarker {
+  private static func build(_ path: String, _ d: Delegate, _ perFrame: Bool) throws -> PoseLandmarker {
     let options = PoseLandmarkerOptions()
     options.baseOptions.modelAssetPath = path
     options.baseOptions.delegate = d
-    options.runningMode = .video
+    options.runningMode = perFrame ? .image : .video
     options.numPoses = 1
     return try PoseLandmarker(options: options)
   }
 
-  /// Loads the `.task` model; GPU first when asked.
-  static func create(modelPath: String, preferGpu: Bool) throws -> VideoLandmarker {
+  /// Loads the `.task` model; GPU first when asked; IMAGE mode with `perFrame`.
+  static func create(modelPath: String, preferGpu: Bool, perFrame: Bool = false) throws -> VideoLandmarker {
     let path = modelPath.hasPrefix("file://") ? String(modelPath.dropFirst(7)) : modelPath
     guard FileManager.default.fileExists(atPath: path) else {
       throw boingError("Pose model not found: \(path)")
@@ -58,7 +61,7 @@ final class VideoLandmarker {
     let gpu = preferGpu
     #endif
     do {
-      return try VideoLandmarker(path: path, preferGpu: gpu)
+      return try VideoLandmarker(path: path, preferGpu: gpu, perFrame: perFrame)
     } catch {
       throw boingError("Could not start the pose model: \(error.localizedDescription)")
     }
@@ -69,15 +72,20 @@ final class VideoLandmarker {
     // MediaPipe needs strictly increasing timestamps; a jump backwards continues after the last one.
     let ms = max(Int((t * 1000).rounded()), lastMs + 1)
     lastMs = ms
+    let perFrame = self.perFrame
+    let run = { (l: PoseLandmarker) throws -> PoseLandmarkerResult in
+      if perFrame { return try l.detect(image: image) }
+      return try l.detect(videoFrame: image, timestampInMilliseconds: ms)
+    }
     let result: PoseLandmarkerResult
     do {
-      result = try landmarker.detect(videoFrame: image, timestampInMilliseconds: ms)
+      result = try run(landmarker)
     } catch {
       if proven || delegate == "CPU" { throw error }
       NSLog("BoingPose: pose inference on the GPU failed, using the CPU: \(error)")
-      landmarker = try VideoLandmarker.build(path, .CPU)
+      landmarker = try VideoLandmarker.build(path, .CPU, perFrame)
       delegate = "CPU"
-      result = try landmarker.detect(videoFrame: image, timestampInMilliseconds: ms)
+      result = try run(landmarker)
     }
     proven = true
     guard let pose = result.landmarks.first else { return nil }

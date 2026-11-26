@@ -4,19 +4,19 @@ import { accepted } from "./measure";
 import { measureVideo, type Analyze } from "./video";
 
 /** A fake decoder over synthetic frames (file timeline), recording each call. */
-function fakeFile(o: Parameters<typeof syntheticFrames>[0]) {
+function fakeFile(o: Parameters<typeof syntheticFrames>[0], perFrameFails = false) {
   const v = syntheticFrames(o);
-  const calls: { from: number; to: number; minInterval: number; n: number; purpose: string }[] = [];
-  const analyze: Analyze = async ({ from, to, minInterval, purpose }, onProgress) => {
+  const calls: { from: number; to: number; minInterval: number; n: number; purpose: string; perFrame: boolean }[] = [];
+  const analyze: Analyze = async ({ from, to, minInterval, purpose, perFrame = false }, onProgress) => {
     let last = -Infinity;
     const frames = v.frames.filter((f) => {
       if (f.t < from || f.t > to || f.t - last < minInterval) return false;
       last = f.t;
       return true;
     });
-    calls.push({ from, to, minInterval, n: frames.length, purpose });
+    calls.push({ from, to, minInterval, n: frames.length, purpose, perFrame });
     onProgress(1);
-    return { frames, size: { width: v.width, height: v.height } };
+    return { frames: perFrameFails && perFrame ? frames.map((f) => ({ t: f.t, lm: null })) : frames, size: { width: v.width, height: v.height } };
   };
   const t = v.frames.map((f) => f.t);
   return { analyze, calls, duration: t[t.length - 1], fps: (t.length - 1) / t[t.length - 1] };
@@ -44,9 +44,21 @@ describe("measureVideo", () => {
     expect(f.calls.slice(1).every((c) => c.minInterval === 0)).toBe(true);
     // A lighter model may locate the jumps; the measurement uses the full one.
     expect(f.calls.map((c) => c.purpose)).toEqual(["find", "measure", "measure"]);
-    expect(r.jumps.filter((m) => accepted(m.jump)).map((m) => +m.jump.hFlight.toFixed(2))).toEqual([0.25, 0.35]);
+    // (Synthetic feet: the feet's takeoff comes ≈ 20 ms after the body's, see tracker.test.ts.)
+    expect(r.jumps.filter((m) => accepted(m.jump)).map((m) => +m.jump.hFlight.toFixed(1))).toEqual([0.2, 0.3]);
     expect(r.jumps.every((m) => m.refined && m.fps > 200)).toBe(true);
     expect(progress[progress.length - 1]).toBe(1);
+  });
+
+  it("measures each window frame by frame first, with tracking where that measures nothing", async () => {
+    const o = { fps: 240, duration: 10, seed: 2, jumps: [{ tTakeoff: 2.5, height: 0.25 }, { tTakeoff: 7, height: 0.35 }] };
+    const ok = fakeFile(o);
+    await measureVideo({ duration: ok.duration, fps: 240, captureFps: 240 }, ok.analyze);
+    expect(ok.calls.map((c) => c.perFrame)).toEqual([false, true, true]);
+    const f = fakeFile(o, true);
+    const r = await measureVideo({ duration: f.duration, fps: 240, captureFps: 240 }, f.analyze);
+    expect(f.calls.map((c) => c.perFrame)).toEqual([false, true, false, true, false]);
+    expect(r.jumps.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
   });
 
   it("doesn't take a variable-frame-rate file for slow motion", async () => {
@@ -54,7 +66,7 @@ describe("measureVideo", () => {
     const f = fakeFile({ fps: 60, duration: 8, seed: 4, jumps: [{ tTakeoff: 3, height: 0.25 }] });
     const r = await measureVideo({ duration: f.duration, fps: 35, peakFps: 60, captureFps: 60 }, f.analyze);
     expect(r.timeScale).toBe(1);
-    expect(r.jumps.filter((m) => accepted(m.jump)).map((m) => +m.jump.hFlight.toFixed(2))).toEqual([0.25]);
+    expect(r.jumps.filter((m) => accepted(m.jump)).map((m) => +m.jump.hFlight.toFixed(1))).toEqual([0.2]);
   });
 
   it("measures every frame of a variable-frame-rate file that slows down around the jump", async () => {

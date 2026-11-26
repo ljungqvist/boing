@@ -140,9 +140,9 @@ open class HybridBoingPoseSpec_cxx {
   }
   
   @inline(__always)
-  public final func prepare(modelPath: std.string, preferGpu: Bool) -> bridge.Result_void_ {
+  public final func prepare(modelPath: std.string, preferGpu: Bool, perFrame: Bool) -> bridge.Result_void_ {
     do {
-      try self.__implementation.prepare(modelPath: String(modelPath), preferGpu: preferGpu)
+      try self.__implementation.prepare(modelPath: String(modelPath), preferGpu: preferGpu, perFrame: perFrame)
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()

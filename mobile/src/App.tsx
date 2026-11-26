@@ -7,14 +7,15 @@ import { Linking, PermissionsAndroid, Platform, Pressable, ScrollView, Settings,
 import { stopUploads } from "boing-upload";
 import { boingPose } from "react-native-boing-pose";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCameraPermission } from "react-native-vision-camera";
+import { useCameraDevices, useCameraPermission } from "react-native-vision-camera";
 import appJson from "../app.json";
 import { discardFeedback } from "../../src/analysis/discard";
 import { entriesForClip, type Entry } from "./logic/jumps";
 import { debugPackage, describeLog, diagnosticsReport, poseReport } from "./logic/diagnostics";
 import type { LiveController, LiveEvents } from "./logic/live";
 import { fpsLabel } from "./logic/camera";
-import { accepted, cm, REJECT_TEXT, summarize } from "./logic/measure";
+import { accepted, cm, jumpsIn, REJECT_TEXT, summarize } from "./logic/measure";
+import { toFrames } from "./logic/pose";
 import type { Status, Tone } from "./logic/status";
 import { measureVideo, type Measured } from "./logic/video";
 import { nativeAnalyzer } from "./native/analyze";
@@ -23,7 +24,8 @@ import { DEFAULT_SERVER, deleteSessions, keptSummary, loadSettings, markReady, r
 import { maxBrightness } from "./native/brightness";
 import { announce, announceFailure, announceMeasuring } from "./native/feedback";
 import { blindColor, type BlindColor } from "./logic/blind";
-import { deleteQuietly, modelPath, toPath } from "./native/models";
+import { TORCH_LABEL, nextTorchMode, torchModeOf } from "./logic/torch";
+import { deleteQuietly, modelPath, toPath, type ModelKind } from "./native/models";
 import { Icon } from "./ui/Icon";
 import { type CameraInfo, LiveCamera } from "./ui/LiveCamera";
 import { JumpDetails, Row, Sheet } from "./ui/Sheets";
@@ -78,7 +80,6 @@ function Main() {
   const [session, setSession] = useState(0); // remounts the camera on Start/flip
   const controller = useRef<LiveController | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const blindRef = useRef(false);
   const soundRef = useRef(sound);
   soundRef.current = sound;
   const run = useRef(0); // cancels a file analysis when something else starts
@@ -97,10 +98,25 @@ function Main() {
     return next;
   });
   const phoneId = settings.phoneId as string;
+  /** The back camera's flashlight: off, automatic or on (saved). */
+  const torch = torchModeOf(settings.torch);
+  const [torchLit, setTorchLit] = useState(false);
+  /** The flashlight pill shows when some camera on the chosen side has a flash. */
+  const hasFlash = useCameraDevices().some((d) => d.position === facing && d.hasTorch);
   const keep = keepActive(settings);
   const updateSettings = (patch: Record<string, unknown>) =>
     setSettings((old) => {
       const next = { ...old, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  /** Remembers the recording's clock shift per camera for the next Start (NaN forgets it): see LiveOptions.clockShift. */
+  const updateClockShift = (camera: string, seconds: number) =>
+    setSettings((old) => {
+      const shifts = { ...(old.clockShift as Record<string, number> | undefined) };
+      if (Number.isFinite(seconds)) shifts[camera] = Math.round(seconds * 1000) / 1000;
+      else delete shifts[camera];
+      const next = { ...old, clockShift: shifts };
       saveSettings(next);
       return next;
     });
@@ -213,8 +229,7 @@ function Main() {
     status: (s) => setStatus((old) => (old.text === s.text && old.tone === s.tone ? old : s)),
     measuring: () => {
       showFlash({ text: "Measuring…", measuring: true });
-      // In blind mode nobody sees the screen: say it.
-      if (blindRef.current) void announceMeasuring(soundRef.current);
+      void announceMeasuring(soundRef.current);
     },
     result: (m, measuring) => {
       console.log(`BOING_LIVE ${JSON.stringify({ h: m.jump.hPrimary, hFlight: m.jump.hFlight, fps: m.fps, refined: m.refined, approximate: m.approximate, flags: m.jump.flags })}`);
@@ -315,7 +330,14 @@ function Main() {
   // (scripts/analyze-on-simulator.sh), as links there wait for an "Open in Boing?" prompt.
   useEffect(() => {
     const handle = async (url: string | null) => {
-      const m = url?.match(/^boing:\/\/analyze\?(path|url)=(.+)$/);
+      // The dev build's scheme is boing-dev.
+      const b = url?.match(/^boing(?:-dev)?:\/\/bench\?url=([^&]+)&cases=(.+)$/);
+      if (b) {
+        // cases: [case, …] or {repeat, cases: [case, …]}
+        const c = JSON.parse(decodeURIComponent(b[2])) as BenchCase[] | { repeat?: number; cases: BenchCase[] };
+        return Array.isArray(c) ? bench(decodeURIComponent(b[1]), c) : bench(decodeURIComponent(b[1]), c.cases, c.repeat);
+      }
+      const m = url?.match(/^boing(?:-dev)?:\/\/analyze\?(path|url)=(.+)$/);
       if (!m) return;
       const target = decodeURIComponent(m[2]);
       testing.current = true;
@@ -345,7 +367,6 @@ function Main() {
   const fpsBadge = fpsLabel(live ? info?.fps : mode === "idle" ? fileFps : 0);
   // Blind mode: the back camera faces the jumper and the screen faces down, away from everyone.
   const blind = live && facing === "back" && screenDown;
-  blindRef.current = blind;
   // Full brightness while blind (also against automatic brightness, the light sensor may be covered).
   useEffect(() => {
     if (!blind) return;
@@ -367,8 +388,11 @@ function Main() {
             onError={fail}
             onInfo={setInfo}
             keep={keepNow && keep}
+            torch={torch}
+            onTorchLit={setTorchLit}
             measureOnCpu={settings.measureOnCpu === true}
-            shortWindow={settings.shortWindow === true}
+            clockShift={(settings.clockShift as Record<string, number> | undefined)?.[facing]}
+            onClockShift={(x) => updateClockShift(facing, x)}
             onScreenDown={setScreenDown}
             onKeptClip={(id, name) => {
               if (!keep) return;
@@ -413,6 +437,18 @@ function Main() {
             </Pressable>
           </View>
         </View>
+
+        {hasFlash && (
+          <Pressable
+            style={[s.torch, { top: insets.top + 92 }, torchLit && s.torchLit]}
+            onPress={() => updateSettings({ torch: nextTorchMode(torch) })}
+            hitSlop={8}
+            accessibilityLabel={`${TORCH_LABEL[torch]}. Tap to change`}
+          >
+            <Icon name={torch === "off" ? "torchOff" : torch === "auto" ? "torchAuto" : "torchOn"} size={20} color={torchLit ? "#1d1500" : C.text} />
+            <Text style={[s.torchText, torchLit && s.torchTextLit]}>{torch === "off" ? "Off" : torch === "auto" ? "Auto" : "On"}</Text>
+          </Pressable>
+        )}
 
         {fpsBadge && (
           <View style={[s.fpsWrap, { top: insets.top + 56 }]} pointerEvents="none">
@@ -511,34 +547,7 @@ function Main() {
       {menu && (
         <Sheet title="Settings" onClose={() => setMenu(false)}>
           <Row label="Version" value={VERSION} />
-          <Row label="Camera" value={facing === "back" ? "Back" : "Front"} />
-          {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
-          {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
-          {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
-          <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
-            <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
-          </Pressable>
-          <Pressable style={s.wide} onPress={() => updateSettings({ shortWindow: settings.shortWindow !== true })}>
-            <Text style={s.wideText}>Re-measuring window: {settings.shortWindow === true ? "short" : "normal"}</Text>
-          </Pressable>
-          <Text style={s.hint}>For comparing the speed; both apply from the next Start.</Text>
-          {logs.length > 0 && (
-            <>
-              <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
-              <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
-                <Text style={s.wideText}>Share diagnostics</Text>
-              </Pressable>
-              {logs.some((e) => e.pose) && (
-                <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs, true)}>
-                  <Text style={s.wideText}>Share pose data (latest 8 jumps)</Text>
-                </Pressable>
-              )}
-              {logs.map((e, i) => (
-                <Text key={i} style={s.diag}>{describeLog(e)}</Text>
-              ))}
-            </>
-          )}
-          <Text style={s.sectionTitle}>Debug recordings</Text>
+          <Text style={s.sectionTitle}>Recordings</Text>
           {ask === "consent" ? (
             <>
               <Text style={s.consentTitle}>{CONSENT_TITLE}</Text>
@@ -614,14 +623,6 @@ function Main() {
               <Text style={[s.hint, { color: C.accent }]}>Withdraw consent · recording ID {phoneId}</Text>
             </Pressable>
           )}
-          {ignored.length > 0 && (
-            <>
-              <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
-              {ignored.map((x, i) => (
-                <Text key={i} style={s.hint}>{x}</Text>
-              ))}
-            </>
-          )}
           <Text style={s.hint}>
             Boing measures the height of a countermovement jump from the camera. Every recorded frame around
             a jump is analysed again, at the camera's full frame rate.
@@ -632,10 +633,91 @@ function Main() {
           <Pressable onPress={() => void Linking.openURL(PRIVACY_URL)} accessibilityRole="link">
             <Text style={[s.hint, { color: C.accent }]}>Privacy policy</Text>
           </Pressable>
+          <View style={s.debugLine}>
+            <Text style={s.debugTitle}>Debug</Text>
+            <Text style={s.hint}>For developers and testers.</Text>
+          </View>
+          {info && <Row label="Camera frame rate" value={info.fps ? `${Math.round(info.fps)} fps` : "–"} />}
+          {info && <Row label="Pose model" value={`full · ${info.delegate || "–"}`} />}
+          {live && <Row label="Live analysis" value={`${controller.current?.fps ?? 0} fps`} />}
+          <Pressable style={s.wide} onPress={() => updateSettings({ measureOnCpu: settings.measureOnCpu !== true })}>
+            <Text style={s.wideText}>Re-measure jumps on: {settings.measureOnCpu === true ? "CPU" : "GPU"}</Text>
+          </Pressable>
+          <Text style={s.hint}>For comparing the speed; applies from the next Start.</Text>
+          {logs.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>Diagnostics (latest first)</Text>
+              <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs)}>
+                <Text style={s.wideText}>Share diagnostics</Text>
+              </Pressable>
+              {logs.some((e) => e.pose) && (
+                <Pressable style={s.wide} onPress={() => void shareDiagnostics(facing, lastInfo.current, logs, true)}>
+                  <Text style={s.wideText}>Share pose data (latest 8 jumps)</Text>
+                </Pressable>
+              )}
+              {logs.map((e, i) => (
+                <Text key={i} style={s.diag}>{describeLog(e)}</Text>
+              ))}
+            </>
+          )}
+          {ignored.length > 0 && (
+            <>
+              <Text style={s.sectionTitle}>{ignored.length} other movement{ignored.length > 1 ? "s" : ""} ignored</Text>
+              {ignored.map((x, i) => (
+                <Text key={i} style={s.hint}>{x}</Text>
+              ))}
+            </>
+          )}
         </Sheet>
       )}
     </View>
   );
+}
+
+/** One timing case of the bench hook (`scripts/bench-on-device.sh`). */
+interface BenchCase {
+  name: string;
+  model?: ModelKind;
+  gpu?: boolean;
+  perFrame?: boolean;
+  cpuHelpers?: number;
+  /** Seconds on the file's timeline. */
+  from: number;
+  to: number;
+}
+
+/**
+ * Testing hook: boing://bench?url=…&cases=[…] (or {"repeat": n, "cases": […]}) downloads a video and times `analyzeVideo` on it for each case, `repeat`
+ * rounds (cases interleaved, so heat and background work hit them alike). Logs `BOING_BENCH {…}` per run.
+ */
+async function bench(url: string, cases: BenchCase[], repeat = 3) {
+  const say = (r: Record<string, unknown>) => console.log(`BOING_BENCH ${JSON.stringify(r)}`);
+  try {
+    const dest = new File(Paths.cache, `bench-${Date.now()}.mp4`);
+    await File.downloadFileAsync(url, dest);
+    const path = toPath(dest.uri);
+    const models: Partial<Record<ModelKind, string>> = {};
+    for (const k of new Set(cases.map((c) => c.model ?? "heavy"))) models[k] = await modelPath(k);
+    say({ start: true, info: boingPose.videoInfo(path), cases: cases.length, repeat });
+    for (let round = 0; round < repeat; round++) {
+      for (const c of cases) {
+        const t0 = Date.now();
+        const r = await boingPose.analyzeVideo(path, {
+          modelPath: toPath(models[c.model ?? "heavy"]!), from: c.from, to: c.to, minInterval: 0, preferGpu: c.gpu ?? true,
+          perFrame: c.perFrame ?? true, cpuHelpers: c.cpuHelpers,
+        }, () => {});
+        // The jumps found in these frames, as the re-measurement would (heights in cm).
+        const jumps = jumpsIn(toFrames(r), { width: r.width, height: r.height })
+          .map((j) => ({ tOff: +j.tOff.toFixed(4), h: +(j.hPrimary * 100).toFixed(2), ok: accepted(j), flags: j.flags }));
+        say({ name: c.name, round, ms: Date.now() - t0, delegate: r.delegate, size: [r.width, r.height], frames: r.times.length,
+          withPose: r.found.filter((x) => x).length, timing: r.timing, jumps });
+      }
+    }
+    deleteQuietly(dest.uri);
+    say({ done: true });
+  } catch (e) {
+    say({ error: String((e as Error)?.message ?? e) });
+  }
 }
 
 /**
@@ -702,6 +784,15 @@ const s = StyleSheet.create({
     color: C.text, fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"], overflow: "hidden",
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
   },
+  debugLine: { borderTopWidth: 1, borderTopColor: C.line, marginTop: 20, paddingTop: 12 },
+  debugTitle: { color: C.text, fontSize: 18, fontWeight: "700" },
+  torch: {
+    position: "absolute", right: 12, flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  torchLit: { backgroundColor: C.warn },
+  torchText: { color: C.text, fontSize: 13, fontWeight: "600" },
+  torchTextLit: { color: "#1d1500" },
   fpsLow: { color: "#1d1500", backgroundColor: C.warn },
   flashWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
   flashBox: { backgroundColor: "rgba(0,0,0,0.55)", borderRadius: 16, paddingHorizontal: 20, paddingVertical: 6 },

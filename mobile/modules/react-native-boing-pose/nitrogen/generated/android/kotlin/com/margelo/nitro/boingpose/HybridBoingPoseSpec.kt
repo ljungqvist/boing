@@ -36,7 +36,7 @@ abstract class HybridBoingPoseSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
-  abstract fun prepare(modelPath: String, preferGpu: Boolean): Unit
+  abstract fun prepare(modelPath: String, preferGpu: Boolean, perFrame: Boolean): Unit
   
   @DoNotStrip
   @Keep

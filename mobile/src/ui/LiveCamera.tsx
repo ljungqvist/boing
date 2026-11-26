@@ -7,16 +7,18 @@ import {
   type CameraSessionConfig,
   type Frame,
   useCameraDevice,
+  useCameraDevices,
   useFrameOutput,
   useVideoOutput,
 } from "react-native-vision-camera";
 import { Accelerometer, Gyroscope } from "expo-sensors";
 import { scheduleOnRN } from "react-native-worklets";
 import { screenFacesDown } from "../logic/blind";
-import { bestFps } from "../logic/camera";
+import { bestFps, pickCamera } from "../logic/camera";
 import { LiveController, type LiveEvents } from "../logic/live";
 import { SampleBuffer } from "../logic/motion";
 import { keepClip } from "../native/debug";
+import { DarkDetector, type TorchMode, meanBrightness } from "../logic/torch";
 import { fromDetect, toFrames } from "../logic/pose";
 import { deleteQuietly, modelPath, toPath } from "../native/models";
 import { PoseFeed, Skeleton } from "./Skeleton";
@@ -43,24 +45,46 @@ interface Props {
   onKeptClip?: (id: string, name: string) => void;
   /** Re-measure on the CPU instead of the GPU (debug setting, to compare the speed). */
   measureOnCpu?: boolean;
-  /** Re-measure a shorter window once the recording's clock shift is known (debug setting, A/B test). */
-  shortWindow?: boolean;
+  /** The recording's clock shift remembered for this camera (`LiveOptions.clockShift`), if any. */
+  clockShift?: number;
+  /** A clock shift to remember for this camera (NaN: forget the remembered one). */
+  onClockShift?: (seconds: number) => void;
   /** The screen turned to face below the horizon (`true`) or above it again (blind mode). */
   onScreenDown?: (down: boolean) => void;
+  /** The back camera's flashlight: off, automatic (when the picture is dark) or always on. */
+  torch?: TorchMode;
+  /** The flashlight is lit (or not): for the button. */
+  onTorchLit?: (lit: boolean) => void;
 }
 
 /** Motion sensors at 100 Hz (Android's limit without extra permission is 200 Hz). */
 const SENSOR_MS = 10;
 
+/**
+ * CPU copies of the pose model sharing the frames of a re-measurement with the first one (Android; fewer on phones with
+ * few cores or little memory). On a slow tablet (2026-11-25): 239 ms per frame on the GPU alone, 162 with one helper,
+ * 142 with two.
+ */
+const CPU_HELPERS = 2;
+
 /** The live camera: preview, recording, and pose on as many frames as the phone manages. */
-export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, shortWindow = false, onScreenDown }: Props) {
-  const device = useCameraDevice(facing, { physicalDevices: ["wide-angle"] });
+export function LiveCamera({ facing, events, onStep, onError, onInfo, controllerRef, keep, onKeptClip, measureOnCpu = false, clockShift, onClockShift, onScreenDown, torch = "off", onTorchLit }: Props) {
+  // Which camera: see pickCamera (the torch wanted narrows it to cameras with a flash). Automatic
+  // mode starts without the torch and asks again once it has turned dark (state below).
+  const [dark, setDark] = useState(false);
+  const wantTorch = torch === "on" || (torch === "auto" && dark);
+  const all = useCameraDevices();
+  const sideCameras = useMemo(() => all.filter((d) => d.position === facing), [all, facing]);
+  const defaultCamera = useCameraDevice(facing);
+  const device = useMemo(() => pickCamera(sideCameras, defaultCamera?.id, wantTorch), [sideCameras, defaultCamera?.id, wantTorch]);
   const fps = useMemo(() => (device ? bestFps(device.supportedFPSRanges) : 30), [device]);
   const videoOutput = useVideoOutput({ enableAudio: false });
   const [detector, setDetector] = useState<PoseDetector | null>(null);
   const model = useRef<string | null>(null);
   /** Model for re-measuring jumps from the recording: heavy (steadier feet). */
   const measureModel = useRef<string | null>(null);
+  const clockShiftRef = useRef(onClockShift);
+  clockShiftRef.current = onClockShift;
   const info = useRef<CameraInfo>({ fps: 0, delegate: "" });
   const cameraRef = useRef<CameraRef>(null);
   const maxFps = useMemo(() => (device ? Math.max(0, ...device.supportedFPSRanges.map((r) => r.max)) : 0), [device]);
@@ -71,6 +95,47 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
 
   const screenDownRef = useRef(onScreenDown);
   screenDownRef.current = onScreenDown;
+
+  // Flashlight. Automatic mode watches the picture's brightness and, once it has been dark for a
+  // while, lights the torch for the rest of this run (see DarkDetector).
+  const darkDetector = useMemo(() => new DarkDetector(), []);
+  const hasTorch = device?.hasTorch === true;
+  const lit = hasTorch && wantTorch;
+  const torchLitRef = useRef(onTorchLit);
+  torchLitRef.current = onTorchLit;
+  useEffect(() => {
+    if (torch !== "auto") {
+      darkDetector.reset();
+      setDark(false);
+    }
+  }, [torch, darkDetector]);
+  useEffect(() => {
+    torchLitRef.current?.(lit);
+    return () => torchLitRef.current?.(false);
+  }, [lit]);
+  const litRef = useRef(lit);
+  litRef.current = lit;
+  // Watchdog: the camera may drop the torch when it reconfigures (rebinding). Every 1.5 s compare
+  // with what the camera reports and set it again if needed. Errors (camera still opening) are
+  // ignored: the next round tries again.
+  useEffect(() => {
+    if (!device?.hasTorch) return;
+    const tick = () => {
+      const c = cameraRef.current?.controller;
+      if (!c) return;
+      const want = litRef.current ? "on" : "off";
+      try {
+        if (c.torchMode !== want) c.setTorchMode(want).catch(() => {});
+      } catch {
+        // Not readable yet.
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1500);
+    return () => clearInterval(id);
+  }, [device]);
+  /** Whether frames are checked for darkness: automatic mode, light not on yet, some camera with a flash. */
+  const sense = torch === "auto" && !dark && sideCameras.some((d) => d.hasTorch);
 
   // The phone's tilt and movement around each jump: accelerometer and gyroscope, last 60 s.
   const acc = useMemo(() => new SampleBuffer(60), []);
@@ -121,7 +186,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         modelPath("heavy").then((h) => {
           if (!alive) return;
           measureModel.current = h;
-          boingPose.prepare(toPath(h), !measureOnCpu);
+          boingPose.prepare(toPath(h), !measureOnCpu, true);
         }, () => {});
       })
       .catch((e) => alive && onError(e));
@@ -153,9 +218,11 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             },
           };
         },
-        async analyzeClip(path, from, to) {
-          const run = (m: string) =>
-            boingPose.analyzeVideo(path, { modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu }, () => {});
+        async analyzeClip(path, from, to, perFrame) {
+          // Frame by frame, CPU copies of the model share the frames with the first one (fewer on phones with little memory).
+          const run = (m: string) => boingPose.analyzeVideo(path, {
+            modelPath: toPath(m), from, to, minInterval: 0, preferGpu: !measureOnCpu, perFrame, cpuHelpers: perFrame ? CPU_HELPERS : 0,
+          }, () => {});
           let heavy = measureModel.current;
           let r;
           try {
@@ -167,7 +234,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
             boingPose.releasePrepared();
             r = await run(model.current!);
           }
-          const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full" };
+          const facts = { ...clipFacts(path), model: heavy ? "heavy" : "full", mode: perFrame ? "image" : "video" };
           return {
             frames: toFrames(r), size: { width: r.width, height: r.height }, video: facts,
             timing: { ...r.timing, delegate: r.delegate },
@@ -195,9 +262,10 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         log: (e) => eventsRef.current.log?.(e),
         // While a jump is measured, no pose on the camera frames: the phone's power goes to the measurement.
         paused: (on) => { detector.minInterval = on ? Infinity : 0; },
+        clockShift: (x) => clockShiftRef.current?.(x),
       },
       // The heavy model takes several seconds per jump on a mid-range phone.
-      { timeoutMs: 60_000, shortWindow },
+      { timeoutMs: 60_000, clockShift },
     );
   }, [detector, videoOutput, acc, gyro, maxFps]);
 
@@ -210,13 +278,14 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   }, [controller, controllerRef]);
 
   const feed = useMemo(() => new PoseFeed(), []);
-  const onPose = useCallback((a: number[]) => {
+  const onPose = useCallback((a: number[], brightness: number) => {
+    if (Number.isFinite(brightness) && darkDetector.update(brightness, Date.now() / 1000)) setDark(true);
     const { frame, size } = fromDetect(a);
     if (!controller) return;
     controller.push(frame, size);
     // No skeleton while a jump is measured ("not ready").
     feed.emit({ lm: controller.measuring ? null : frame.lm, size, air: controller.airborne });
-  }, [controller, feed]);
+  }, [controller, feed, darkDetector]);
 
   const onFrame = useCallback((frame: Frame) => {
     "worklet";
@@ -224,12 +293,17 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
       if (detector) {
         const a = detector.detect(frame);
         // Empty: skipped (live analysis paused while measuring).
-        if (a.length > 0) scheduleOnRN(onPose, a);
+        if (a.length > 0) {
+          const brightness = sense && frame.hasPixelBuffer
+            ? meanBrightness(new Uint8Array(frame.getPixelBuffer()), frame.width, frame.height, frame.bytesPerRow)
+            : NaN;
+          scheduleOnRN(onPose, a, brightness);
+        }
       }
     } finally {
       frame.dispose();
     }
-  }, [detector, onPose]);
+  }, [detector, onPose, sense]);
 
   const frameOutput = useFrameOutput({
     pixelFormat: "rgb",
@@ -237,6 +311,12 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
     dropFramesWhileBusy: true,
     onFrame,
   });
+
+  /** The flashlight failing (no flash unit, busy) must never stop the camera. */
+  const onCameraError = useCallback((e: Error) => {
+    if (/torch|flash/i.test(String(e?.message ?? e))) return;
+    onError(e);
+  }, [onError]);
 
   const onConfig = useCallback((c: CameraSessionConfig) => {
     info.current = { ...info.current, fps: c.selectedFPS ?? 0 };
@@ -250,6 +330,7 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
   return (
     <>
       <Camera
+        key={device.id}
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         isActive
@@ -257,7 +338,9 @@ export function LiveCamera({ facing, events, onStep, onError, onInfo, controller
         outputs={outputs}
         constraints={constraints}
         onSessionConfigSelected={onConfig}
-        onError={onError}
+        // No torchMode prop: its errors ("Camera is not active" while the camera is still opening)
+        // reach onError and stopped the whole camera. The torch is set by the watchdog above.
+        onError={onCameraError}
         resizeMode="cover"
         // The app is portrait only. With the default ("device") a phone lying on the floor reads as
         // landscape at random: the clips got a ±90° rotation tag and were re-measured sideways.

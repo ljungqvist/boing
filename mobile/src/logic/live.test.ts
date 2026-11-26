@@ -15,20 +15,23 @@ function setup(opts: {
   stopHangs?: boolean;
   /** The recording's clock runs this much slower around each takeoff (a wrong time base). */
   clipStretch?: number;
-  /** In the recording, the hips drift up this fast (m/s) after takeoff: moving towards a floor-level camera. */
+  /** In the recording, the body above the feet drifts up this fast (m/s) after takeoff: moving towards a floor-level camera. */
   clipDrift?: number;
   jumps?: { tTakeoff: number; height: number }[];
   duration?: number;
   /** Seconds (frame clock) each result takes to be read out. */
   readout?: number;
-  shortWindow?: boolean;
+  /** The clock shift remembered for the camera (LiveOptions.clockShift). */
+  clockShift?: number;
+  /** Per-frame pose (no tracking) loses the person in every frame: only the tracking pass measures. */
+  perFrameFails?: boolean;
 } = {}) {
   const jumps = opts.jumps ?? [{ tTakeoff: 4, height: 0.3 }, { tTakeoff: 9, height: 0.22 }];
   const scene = syntheticFrames({ fps: 240, duration: opts.duration ?? 14, jumps, seed: 5 });
   const size = { width: scene.width, height: scene.height };
   let now = 0;
   const clips: { start: number; stopped: boolean; deleted: boolean; hasJumps?: boolean }[] = [];
-  const analysed: { from: number; to: number }[] = [];
+  const analysed: { from: number; to: number; perFrame: boolean }[] = [];
   const deps: LiveDeps = {
     async startClip() {
       if (opts.recordFails) throw new Error("no recorder");
@@ -44,15 +47,15 @@ function setup(opts: {
         },
       };
     },
-    async analyzeClip(path, from, to) {
+    async analyzeClip(path, from, to, perFrame) {
       if (opts.analyzeFails) throw new Error("decoder failed");
-      analysed.push({ from, to });
+      analysed.push({ from, to, perFrame });
       const start = Number(path.split("@")[1]);
       const k = opts.clipStretch ?? 1;
       const takeoff = jumps.map((j) => j.tTakeoff).find((t) => t - start > from && t - start < to) ?? 0;
       const frames: PoseFrame[] = scene.frames
         .filter((f) => f.t - start >= from && f.t - start <= to)
-        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: drifted(f, takeoff) }));
+        .map((f) => ({ t: takeoff + (f.t - takeoff) * k - start, lm: perFrame && opts.perFrameFails ? null : drifted(f, takeoff) }));
       return { frames, size, video: { width: 720, height: 1280, rotation: 270, fps: 30 }, timing: { poseMs: 900, delegate: "GPU" } };
     },
     deleteClip(path, hasJumps) {
@@ -71,7 +74,7 @@ function setup(opts: {
     const v = opts.clipDrift ?? 0;
     if (!v || !f.lm || f.t < takeoff) return f.lm;
     const up = (v * 300 * (f.t - takeoff)) / scene.height;
-    return f.lm.map((p, i) => (i === 23 || i === 24 ? [p[0], p[1] - up, p[2], p[3]] : p) as typeof p);
+    return f.lm.map((p, i) => (i < 27 ? [p[0], p[1] - up, p[2], p[3]] : p) as typeof p);
   };
   const results: Measured[] = [];
   /** For each result: whether `measuring()` had been called for it. */
@@ -81,6 +84,7 @@ function setup(opts: {
   let measuring = 0;
   const paused: boolean[] = [];
   const statuses = new Set<string>();
+  const shifts: number[] = [];
   const live = new LiveController(deps, {
     status: (st) => statuses.add(st.text),
     paused: (on) => paused.push(on),
@@ -93,7 +97,8 @@ function setup(opts: {
       while (now < until && !ended) await Promise.resolve();
     },
     log: (e) => logs.push(e),
-  }, { shortWindow: opts.shortWindow });
+    clockShift: (x) => shifts.push(x),
+  }, { clockShift: opts.clockShift });
   /** The scene is over: nothing is read out any more. */
   let ended = false;
   async function run() {
@@ -109,7 +114,7 @@ function setup(opts: {
     ended = true;
     await live.stop();
   }
-  return { live, run, results, afterMeasuring, clips, analysed, logs, pendingAtResult, paused, statuses, now: () => now, measuring: () => measuring };
+  return { live, run, results, afterMeasuring, clips, analysed, logs, pendingAtResult, paused, statuses, shifts, now: () => now, measuring: () => measuring };
 }
 
 describe("LiveController", () => {
@@ -206,15 +211,64 @@ describe("LiveController", () => {
     expect(measured[1].clockShift as number).toBeCloseTo(-0.2, 1);
     expect(Math.abs(measured[1].offset as number)).toBeLessThan(0.05);
     expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+    // The logged clip start is the one the logged pose is on: pose time = clip time + clipStart.
+    for (const e of measured) {
+      const pose = e.pose as { t0: number; frames: number[][] };
+      const w = e.window as { from: number };
+      expect(e.clipStart as number).toBeCloseTo((e.clipStartUncorrected as number) - (e.clockShift as number), 9);
+      expect(pose.t0 - (e.clipStart as number)).toBeGreaterThanOrEqual(w.from - 1e-6);
+      expect(pose.t0 - (e.clipStart as number)).toBeLessThan(w.from + 0.05);
+    }
   });
 
-  it("analyses a shorter window once the clock shift is known, if asked to", async () => {
-    const s = setup({ startLag: 0.2, shortWindow: true });
+  it("re-measures frame by frame first, and with tracking only where that finds nothing measurable", async () => {
+    const ok = setup();
+    await ok.run();
+    expect(ok.analysed.map((a) => a.perFrame)).toEqual([true, true]);
+    expect(ok.logs.filter((e) => e.pose).every((e) => e.perFrame === true && !e.perFrameTry)).toBe(true);
+
+    const s = setup({ perFrameFails: true });
+    await s.run();
+    expect(s.analysed.map((a) => a.perFrame)).toEqual([true, false, true, false]);
+    const measured = s.logs.filter((e) => e.pose);
+    expect(measured.every((e) => e.perFrame === false && (e.perFrameTry as { error?: string }).error === "no-match")).toBe(true);
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+  });
+
+  it("analyses a shorter window once the clock shift is known, and reports the shift to remember", async () => {
+    const s = setup({ startLag: 0.2 });
     await s.run();
     const [first, second] = s.analysed.map((w) => w.to - w.from);
     // The first jump still gets the full window; the second 0.4 s less.
     expect(first - second).toBeGreaterThan(0.3);
     expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+    // Learned from both jumps (the recording starts late: the live takeoff runs ahead of it).
+    expect(s.shifts).toHaveLength(2);
+    expect(s.shifts[0]).toBeCloseTo(-0.2, 1);
+  });
+
+  it("uses a remembered clock shift from the first jump on", async () => {
+    const fresh = setup({ startLag: 0.2 });
+    await fresh.run();
+    const s = setup({ startLag: 0.2, clockShift: -0.2 });
+    await s.run();
+    // The first jump's window is already the short one.
+    const len = (w: { from: number; to: number }) => w.to - w.from;
+    expect(len(fresh.analysed[0]) - len(s.analysed[0])).toBeCloseTo(0.4, 2);
+    expect(s.results.filter((m) => accepted(m.jump) && m.refined)).toHaveLength(2);
+    expect(s.logs.some((e) => e.clockShiftForgotten)).toBe(false);
+  });
+
+  it("forgets a remembered clock shift that's wrong once its jump can't be measured", async () => {
+    // Remembered +1 s, but the recording starts 0.2 s late: the first window misses the takeoff.
+    const s = setup({ startLag: 0.2, clockShift: 1 });
+    await s.run();
+    const measured = s.logs.filter((e) => "clipStart" in e);
+    expect(measured[0].clockShiftForgotten).toBe(true);
+    expect(s.shifts[0]).toBeNaN();
+    // The next jump gets the full window (it starts earlier than the first one's short window would) and is measured.
+    expect(measured[1].pad).toBe(0.3);
+    expect(s.results[1].refined && accepted(s.results[1].jump)).toBe(true);
   });
 
   it("falls back to the live result, marked approximate, when re-measuring fails", async () => {
@@ -261,7 +315,7 @@ describe("LiveController", () => {
   });
 
   it("doesn't show the live height when re-measuring finds the movement unmeasurable", async () => {
-    // In the recording the hips' highest point comes too late for the landing (the person moved
+    // In the recording the body's highest point comes too late for the landing (the person moved
     // towards the camera): the live analysis, with fewer frames, would show a height anyway.
     const s = setup({ clipDrift: 0.5, liveFps: 30 });
     await s.run();

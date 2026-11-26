@@ -32,6 +32,7 @@ namespace margelo::nitro::boingpose { struct AnalyzeOptions; }
 #include <vector>
 #include "AnalyzeTiming.hpp"
 #include "AnalyzeOptions.hpp"
+#include <optional>
 #include <functional>
 
 #include "NitroBoingPose-Swift-Cxx-Umbrella.hpp"
@@ -92,8 +93,8 @@ namespace margelo::nitro::boingpose {
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline void prepare(const std::string& modelPath, bool preferGpu) override {
-      auto __result = _swiftPart.prepare(modelPath, std::forward<decltype(preferGpu)>(preferGpu));
+    inline void prepare(const std::string& modelPath, bool preferGpu, bool perFrame) override {
+      auto __result = _swiftPart.prepare(modelPath, std::forward<decltype(preferGpu)>(preferGpu), std::forward<decltype(perFrame)>(perFrame));
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

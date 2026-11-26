@@ -158,3 +158,42 @@ describe("findJumps on synthetic CMJs", () => {
     expect(still.hPrimary).toBe(Math.min(still.hRise, still.hFlight));
   });
 });
+
+describe("apex and takeoff from the whole body", () => {
+  // A 30 cm jump at 60 fps, takeoff at 2 s; the centre of mass flies the parabola.
+  const base = () => {
+    const s = syntheticSignals({ fps: 60, seed: 3 });
+    return { ...s, com: s.hip.map((h) => h - 20) };
+  };
+
+  it("takes the apex from the centre of mass when the hips peak early (knees pulled up late in the flight)", () => {
+    const s = base();
+    const vertex = 2 + Math.sqrt(2 * 9.81 * 0.3) / 9.81;
+    // The hips sink against the centre of mass as the knees come up in the second half of the flight.
+    s.hip = s.hip.map((h, i) => (s.t[i] > vertex && s.t[i] < 2.45 ? h - 300 * 0.08 * ((s.t[i] - vertex) / 0.2) : h));
+    const [com] = findJumps(s);
+    const [hip] = findJumps(s, { apex: "hip" });
+    expect(com.apexFrom).toBe("com");
+    expect(Math.abs(com.tApex - vertex)).toBeLessThan(0.003);
+    expect(hip.tApex).toBeLessThan(vertex - 0.005);
+  });
+
+  it("falls back to the hips without a centre of mass", () => {
+    const s = base();
+    s.com = s.com.map(() => NaN);
+    const [j] = findJumps(s);
+    expect(j.apexFrom).toBe("hip");
+  });
+
+  it("takes the takeoff from the feet: the first of three frames clearly off the floor, halfway to the frame before", () => {
+    const s = base();
+    // Lowest heel/toe: on the floor (0 px) until 2.02 s, then up fast; legs 300 px, so "clearly off" is > 15 px.
+    const foot = s.t.map((t) => (t < 2.02 ? 0 : 600 * (t - 2.02) + 5));
+    const j = findJumps({ ...s, foot, legPx: s.t.map(() => 300) })[0];
+    const first = s.t.findIndex((t, i) => foot[i] > 15);
+    expect(j.takeoffFrom).toBe("feet");
+    expect(j.tOff).toBeCloseTo((s.t[first - 1] + s.t[first]) / 2, 9);
+    // Without feet the toe parabola's takeoff stays.
+    expect(findJumps(s)[0].takeoffFrom).toBe("toe-parabola");
+  });
+});

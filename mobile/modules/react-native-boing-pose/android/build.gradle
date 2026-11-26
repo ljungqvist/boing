@@ -146,5 +146,8 @@ dependencies {
 
   // MediaPipe pose landmarker (same version as the web app's @mediapipe/tasks-vision)
   implementation "com.google.mediapipe:tasks-vision:1.1.0"
+
+  // Unit tests of plain logic (./gradlew :react-native-boing-pose:testReleaseUnitTest from the generated android/)
+  testImplementation "junit:junit:4.13.2"
 }
 

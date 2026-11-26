@@ -4,6 +4,7 @@
 # downloads it (apps can't read files pushed with adb). The pose model downloads on first use.
 #
 #   scripts/analyze-on-device.sh <video.mp4> [timeout seconds]
+#   PKG=info.ljungqvist.boing.dev scripts/analyze-on-device.sh …   (the dev build: boing-dev:// links)
 #
 # Works for the emulator and for a phone on USB: `adb reverse` makes the computer's port reachable
 # as localhost on the device.
@@ -12,7 +13,9 @@ VIDEO=$1
 TIMEOUT=${2:-900}
 ADB=${ADB:-adb}
 PORT=${PORT:-8765}
-PKG=info.ljungqvist.boing
+PKG=${PKG:-info.ljungqvist.boing}
+SCHEME=boing
+[[ $PKG == *.dev ]] && SCHEME=boing-dev
 DIR=$(cd "$(dirname "$VIDEO")" && pwd)
 NAME=$(basename "$VIDEO")
 
@@ -23,7 +26,7 @@ sleep 1
 
 "$ADB" reverse tcp:$PORT tcp:$PORT > /dev/null
 "$ADB" logcat -c
-"$ADB" shell am start -W -a android.intent.action.VIEW -d "boing://analyze?url=http://localhost:$PORT/$NAME" "$PKG" > /dev/null
+"$ADB" shell am start -W -a android.intent.action.VIEW -d "$SCHEME://analyze?url=http://localhost:$PORT/$NAME" "$PKG" > /dev/null
 
 start=$(date +%s)
 while true; do

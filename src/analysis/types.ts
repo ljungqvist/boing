@@ -30,4 +30,10 @@ export interface Signals {
    * 0 when inside); NaN without a person. The head may leave the picture at the apex.
    */
   outside?: number[];
+  /** Height-up pixels of the whole-body centre of mass (NaN without a usable body); the apex is its vertex. */
+  com?: number[];
+  /** Height-up pixels of the lowest visible heel or toe (NaN when none is visible): leaving the floor. */
+  foot?: number[];
+  /** Pixels from the hips to the ankles (NaN unless all four are visible): the scale for "off the floor". */
+  legPx?: number[];
 }

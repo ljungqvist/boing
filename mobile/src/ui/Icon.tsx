@@ -1,7 +1,7 @@
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { C } from "./theme";
 
-export type IconName = "logo" | "menu" | "close" | "film" | "flip" | "soundOn" | "soundOff";
+export type IconName = "logo" | "menu" | "close" | "film" | "flip" | "torchOff" | "torchAuto" | "torchOn" | "soundOn" | "soundOff";
 
 /** The web app's line icons. */
 export function Icon({ name, size = 24, color = C.text }: { name: IconName; size?: number; color?: string }) {
@@ -30,6 +30,11 @@ export function Icon({ name, size = 24, color = C.text }: { name: IconName; size
           <Path d="M20 4v4h-4M4 20v-4h4" {...line} />
         </>
       )}
+      {(name === "torchOff" || name === "torchAuto" || name === "torchOn") && (
+        <Path d="M13 2L5 14h6l-1 8 8-12h-6z" {...line} fill={name === "torchOn" ? color : "none"} />
+      )}
+      {name === "torchOff" && <Path d="M4 4l16 16" {...line} />}
+      {name === "torchAuto" && <Path d="M16 21l2.5-7 2.5 7M17 19h3" {...line} />}
       {(name === "soundOn" || name === "soundOff") && <Path d="M4 9v6h4l5 4V5L8 9z" {...line} />}
       {name === "soundOn" && <Path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" {...line} />}
       {name === "soundOff" && <Path d="M17 9l5 6M22 9l-5 6" {...line} />}

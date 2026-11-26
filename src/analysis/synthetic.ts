@@ -99,9 +99,16 @@ export function syntheticFrames(o: SyntheticOptions = {}): { width: number; heig
   const frames = s.t.map((t, i) => {
     const lm: Landmark[] = Array.from({ length: 33 }, () => [0.5, 0.5, 0, 0.9] as Landmark);
     const set = (idx: number[], up: number) => idx.forEach((k) => (lm[k] = [0.5, y(up), 0, 0.9]));
-    set([23, 24], s.hip[i]);
-    set([29, 30, 31, 32], s.toe[i]);
-    set([0], s.toe[i] + s.bodyPx[i]);
+    const hip = s.hip[i], toe = s.toe[i], head = s.toe[i] + s.bodyPx[i];
+    set([23, 24], hip);
+    set([29, 30, 31, 32], toe);
+    set([0, 7, 8], head);
+    // The rest of the body between them, so the centre of mass moves with it.
+    set([11, 12], hip + 0.6 * (head - hip));
+    set([13, 14], hip + 0.3 * (head - hip));
+    set([15, 16], hip);
+    set([25, 26], toe + 0.5 * (hip - toe));
+    set([27, 28], toe + 0.05 * (hip - toe));
     return { t, lm };
   });
   return { width, height, frames };
