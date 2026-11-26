@@ -1,6 +1,6 @@
 {
   "name": "boing-mobile",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "main": "index.ts",
   "dependencies": {
     "boing-upload": "file:modules/boing-upload",
